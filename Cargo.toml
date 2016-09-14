@@ -1,0 +1,22 @@
+[package]
+name = "rasen"
+version = "0.1.0"
+authors = ["l3ops <root@leops.me>"]
+build = "build.rs"
+description = "Generate SPIR-V bytecode from an operation graph"
+repository = "https://github.com/leops/rasen"
+readme = "README.md"
+keywords = ["SPIRV", "Vulkan", "GLSL"]
+license = "MIT"
+
+[features]
+default = ["aster/with-syntex"]
+
+[dependencies]
+petgraph = "0.2.8"
+
+[build-dependencies]
+aster = "0.26.1"
+syntex_syntax = "0.43.0"
+json = "0.10.2"
+hyper = "0.9.10"
