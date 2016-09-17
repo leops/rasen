@@ -4,17 +4,15 @@
 //! `Node`, describing the operations needed to obtain the outputs of the shader.
 //!
 //! ```
-//! extern crate petgraph;
 //! extern crate rasen;
 //!
-//! use petgraph::Graph;
 //! use rasen::*;
 //!
 //! fn main() {
-//!   let mut graph = Graph::<Node, ()>::new();
+//!   let mut graph = Graph::new();
 //!
 //!   // A vec3 input at location 0
-//!   let normal = graph.add_node(Node::Input(0, TypeName::Vec3));
+//!   let normal = graph.add_node(Node::Input(0, TypeName::Vec(3)));
 //!
 //!   // Some ambient light constants
 //!   let min_light = graph.add_node(Node::Constant(TypedValue::Float(0.1)));
@@ -31,94 +29,106 @@
 //!   let multiply = graph.add_node(Node::Multiply);
 //!
 //!   // And a vec4 output at location 0
-//!   let color = graph.add_node(Node::Output(0, TypeName::Vec4));
+//!   let color = graph.add_node(Node::Output(0, TypeName::Vec(4)));
 //!
 //!   // Normalize the normal
-//!   graph.add_edge(normal, normalize, ());
+//!   graph.add_edge(normal, normalize);
 //!
 //!   // Compute the dot product of the surface normal and the light direction
-//!   graph.add_edge(normalize, dot, ());
-//!   graph.add_edge(light_dir, dot, ());
+//!   graph.add_edge(normalize, dot);
+//!   graph.add_edge(light_dir, dot);
 //!
 //!   // Restrict the result into the ambient light range
-//!   graph.add_edge(dot, clamp, ());
-//!   graph.add_edge(min_light, clamp, ());
-//!   graph.add_edge(max_light, clamp, ());
+//!   graph.add_edge(dot, clamp);
+//!   graph.add_edge(min_light, clamp);
+//!   graph.add_edge(max_light, clamp);
 //!
 //!   // Multiply the light intensity by the surface color
-//!   graph.add_edge(clamp, multiply, ());
-//!   graph.add_edge(mat_color, multiply, ());
+//!   graph.add_edge(clamp, multiply);
+//!   graph.add_edge(mat_color, multiply);
 //!
 //!   // Write the result to the output
-//!   graph.add_edge(multiply, color, ());
+//!   graph.add_edge(multiply, color);
 //!
-//!   let bytecode = build_program(&graph);
+//!   let bytecode = build_program(&graph, ShaderType::Fragment);
 //!   // bytecode is now a Vec<u8> you can pass to Vulkan to create the shader module
 //! }
 //! ```
 //!
-//! On a lower level, you can use the `Module` struct to build your module by adding operations
+//! On a lower level, you can use the `Module` struct to build your module by adding instructions
 //! directly into it.
-//!
-//! Operations can be transformed to bytecode using the `bytecode` module, and specifically the
-//! `to_bytecode` function.
 //!
 
 extern crate petgraph;
+extern crate spirv_utils;
 
-pub mod spirv;
-pub mod bytecode;
 pub mod graph;
+pub mod glsl;
 
 use std::mem;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use petgraph::graph::NodeIndex;
-use petgraph::{
-    Graph,
-    Outgoing, Incoming
+use spirv_utils::*;
+use spirv_utils::desc::{
+    Id, ResultId, TypeId, ValueId
 };
+use spirv_utils::instruction::*;
+use spirv_utils::write::to_bytecode;
 
-use spirv::*;
+/// Re-export of spirv_utils::desc::ExecutionModel used to define the type of a shader module
+pub use spirv_utils::desc::ExecutionModel as ShaderType;
+
 pub use graph::*;
-pub use bytecode::to_bytecode;
 
 /// Builder struct used to define a SPIR-V module
-#[derive(Default)]
 pub struct Module {
-    pub inputs: Vec<u32>,
-    pub outputs: Vec<u32>,
-    imports: HashMap<String, (u32, Operation)>,
-    pub annotations: Vec<Operation>,
-    types: HashMap<TypeName, u32>,
-    pub declarations: Vec<Operation>,
-    pub instructions: Vec<Operation>,
+    mod_type: ShaderType,
+    pub inputs: Vec<Id>,
+    pub outputs: Vec<Id>,
+    imports: HashMap<String, (ValueId, Instruction)>,
+    pub annotations: Vec<Instruction>,
+    types: HashMap<TypeName, TypeId>,
+    pub declarations: Vec<Instruction>,
+    pub instructions: Vec<Instruction>,
     counter: AtomicUsize,
 }
 
-const VOID_ID: u32 = 1;
-const FUNC_ID: u32 = 2;
-const LABEL_ID: u32 = 3;
-const ENTRY_ID: u32 = 4;
+const VOID_ID: TypeId = TypeId(1);
+const FUNC_ID: TypeId = TypeId(2);
+const LABEL_ID: ResultId = ResultId(3);
+const ENTRY_ID: ResultId = ResultId(4);
 
 impl Module {
     /// Create a new shader module with some predefined base values
-    pub fn new() -> Module {
+    pub fn new(mod_type: ShaderType) -> Module {
         Module {
+            mod_type: mod_type,
             declarations: vec![
-                Operation::OpTypeVoid(VOID_ID),
-                Operation::OpTypeFunction(FUNC_ID, VOID_ID)
+                Instruction::TypeVoid {
+                    result_type: VOID_ID,
+                },
+                Instruction::TypeFunction {
+                    result_type: FUNC_ID,
+                    return_ty: VOID_ID,
+                    params: Default::default(),
+                }
             ],
             counter: AtomicUsize::new(5),
-            .. Default::default()
+
+            inputs: Default::default(),
+            outputs: Default::default(),
+            imports: Default::default(),
+            annotations: Default::default(),
+            types: Default::default(),
+            instructions: Default::default(),
         }
     }
 
     /// Create a new Module and add instructions to it based on a Graph
-    pub fn build(graph: &Graph<Node, ()>) -> Module {
-        let mut program = Module::new();
-        for node in graph.externals(Outgoing) {
+    pub fn build(graph: &Graph, mod_type: ShaderType) -> Module {
+        let mut program = Module::new(mod_type);
+        for node in graph.outputs() {
             program.visit(graph, node);
         }
 
@@ -126,139 +136,228 @@ impl Module {
     }
 
     /// Acquire a new identifier to be used in the module
-    pub fn get_id(&mut self) -> u32 {
-        self.counter.fetch_add(1, Ordering::SeqCst) as u32
+    pub fn get_id(&mut self) -> Id {
+        Id(self.counter.fetch_add(1, Ordering::SeqCst) as u32)
     }
 
     /// Import an instruction set to the module, returning its ID
-    pub fn import_set(&mut self, name: String) -> u32 {
+    pub fn import_set(&mut self, name: String) -> ValueId {
         if let Some(ext) = self.imports.get(&name) {
             return ext.0;
         }
 
         let ext_id = self.get_id();
-        self.imports.insert(name.clone(), (ext_id, Operation::OpExtInstImport(ext_id, name.clone())));
-        ext_id
+        self.imports.insert(name.clone(), (ext_id.to_value_id(), Instruction::ExtInstImport {
+            result_id: ext_id.to_result_id(),
+            name: name.clone(),
+        }));
+
+        ext_id.to_value_id()
     }
 
     /// Get the ID corresponding to a Type
-    pub fn register_type(&mut self, type_id: TypeName) -> u32 {
+    pub fn register_type(&mut self, type_id: TypeName) -> TypeId {
         if let Some(reg_id) = self.types.get(&type_id) {
             return *reg_id;
         }
 
-        match type_id {
-            TypeName::Vec4 => {
-                let float_id = self.register_type(TypeName::Float);
-                let vec4_id = self.get_id();
+        let res_id = match type_id {
+            TypeName::Bool => {
+                let bool_id = self.get_id().to_type_id();
 
-                self.declarations.push(Operation::OpTypeVector(vec4_id, float_id, 4));
-                self.types.insert(TypeName::Vec4, vec4_id);
+                self.declarations.push(Instruction::TypeBool {
+                    result_type: bool_id
+                });
 
-                vec4_id
+                bool_id
             },
-            TypeName::Vec3 => {
-                let float_id = self.register_type(TypeName::Float);
-                let vec3_id = self.get_id();
+            TypeName::Int => {
+                let int_id = self.get_id().to_type_id();
 
-                self.declarations.push(Operation::OpTypeVector(vec3_id, float_id, 3));
-                self.types.insert(TypeName::Vec3, vec3_id);
+                self.declarations.push(Instruction::TypeInt {
+                    result_type: int_id,
+                    width: 32,
+                    signed: true
+                });
 
-                vec3_id
-            },
-            TypeName::Vec2 => {
-                let float_id = self.register_type(TypeName::Float);
-                let vec2_id = self.get_id();
-
-                self.declarations.push(Operation::OpTypeVector(vec2_id, float_id, 2));
-                self.types.insert(TypeName::Vec2, vec2_id);
-
-                vec2_id
+                int_id
             },
             TypeName::Float => {
-                let float_id = self.get_id();
+                let float_id = self.get_id().to_type_id();
 
-                self.declarations.push(Operation::OpTypeFloat(float_id, 32));
-                self.types.insert(TypeName::Float, float_id);
+                self.declarations.push(Instruction::TypeFloat {
+                    result_type: float_id,
+                    width: 32,
+                });
 
                 float_id
             },
-        }
+            TypeName::Vec(len) => {
+                let float_id = self.register_type(TypeName::Float);
+                let vec_id = self.get_id().to_type_id();
+
+                self.declarations.push(Instruction::TypeVector {
+                    result_type: vec_id,
+                    type_id: float_id,
+                    len: len,
+                });
+
+                vec_id
+            },
+            TypeName::Mat(len) => {
+                let float_id = self.register_type(TypeName::Float);
+                let mat_id = self.get_id().to_type_id();
+
+                self.declarations.push(Instruction::TypeMatrix {
+                    result_type: mat_id,
+                    type_id: float_id,
+                    cols: len,
+                });
+
+                mat_id
+            },
+        };
+
+        self.types.insert(type_id, res_id);
+        res_id
     }
 
     /// Add a new constant to the module, returning its ID
-    pub fn register_constant(&mut self, constant: TypedValue) -> u32 {
+    pub fn register_constant(&mut self, constant: TypedValue) -> ResultId {
         match constant {
             TypedValue::Vec4(x, y, z, w) => {
-                let x_id = self.register_constant(TypedValue::Float(x));
-                let y_id = self.register_constant(TypedValue::Float(y));
-                let z_id = self.register_constant(TypedValue::Float(z));
-                let w_id = self.register_constant(TypedValue::Float(w));
+                let x_id = self.register_constant(TypedValue::Float(x)).to_value_id();
+                let y_id = self.register_constant(TypedValue::Float(y)).to_value_id();
+                let z_id = self.register_constant(TypedValue::Float(z)).to_value_id();
+                let w_id = self.register_constant(TypedValue::Float(w)).to_value_id();
 
-                let vec_type = self.register_type(TypeName::Vec4);
-                let res_id = self.get_id();
-                self.declarations.push(Operation::OpConstantComposite(res_id, vec_type, vec![x_id, y_id, z_id, w_id]));
+                let vec_type = self.register_type(TypeName::Vec(4));
+                let res_id = self.get_id().to_result_id();
+                self.declarations.push(Instruction::ConstantComposite {
+                    result_type: vec_type,
+                    result_id: res_id,
+                    flds: vec![x_id, y_id, z_id, w_id].into_boxed_slice(),
+                });
 
-                res_id
+                ResultId(res_id.0)
             },
             TypedValue::Vec3(x, y, z) => {
-                let x_id = self.register_constant(TypedValue::Float(x));
-                let y_id = self.register_constant(TypedValue::Float(y));
-                let z_id = self.register_constant(TypedValue::Float(z));
+                let x_id = self.register_constant(TypedValue::Float(x)).to_value_id();
+                let y_id = self.register_constant(TypedValue::Float(y)).to_value_id();
+                let z_id = self.register_constant(TypedValue::Float(z)).to_value_id();
 
-                let vec_type = self.register_type(TypeName::Vec3);
-                let res_id = self.get_id();
-                self.declarations.push(Operation::OpConstantComposite(res_id, vec_type, vec![x_id, y_id, z_id]));
+                let vec_type = self.register_type(TypeName::Vec(3));
+                let res_id = self.get_id().to_result_id();
+                self.declarations.push(Instruction::ConstantComposite {
+                    result_type: vec_type,
+                    result_id: res_id,
+                    flds: vec![x_id, y_id, z_id].into_boxed_slice(),
+                });
 
-                res_id
+                ResultId(res_id.0)
             },
             TypedValue::Vec2(x, y) => {
-                let x_id = self.register_constant(TypedValue::Float(x));
-                let y_id = self.register_constant(TypedValue::Float(y));
+                let x_id = self.register_constant(TypedValue::Float(x)).to_value_id();
+                let y_id = self.register_constant(TypedValue::Float(y)).to_value_id();
 
-                let vec_type = self.register_type(TypeName::Vec2);
-                let res_id = self.get_id();
-                self.declarations.push(Operation::OpConstantComposite(res_id, vec_type, vec![x_id, y_id]));
+                let vec_type = self.register_type(TypeName::Vec(2));
+                let res_id = self.get_id().to_result_id();
+                self.declarations.push(Instruction::ConstantComposite {
+                    result_type: vec_type,
+                    result_id: res_id,
+                    flds: vec![x_id, y_id].into_boxed_slice(),
+                });
 
-                res_id
+                ResultId(res_id.0)
             },
             TypedValue::Float(value) => {
                 let float_type = self.register_type(TypeName::Float);
-                let res_id = self.get_id();
+                let res_id = self.get_id().to_result_id();
 
                 unsafe {
                     let transmuted = mem::transmute::<f32, u32>(value);
-                    self.declarations.push(Operation::OpConstant(res_id, float_type, transmuted));
+                    self.declarations.push(Instruction::Constant {
+                        result_type: float_type,
+                        result_id: res_id,
+                        val: vec![transmuted].into_boxed_slice(),
+                    });
                 }
 
-                res_id
-            }
+                ResultId(res_id.0)
+            },
+            TypedValue::Int(value) => {
+                let int_type = self.register_type(TypeName::Int);
+                let res_id = self.get_id().to_result_id();
+
+                unsafe {
+                    let transmuted = mem::transmute::<i32, u32>(value);
+                    self.declarations.push(Instruction::Constant {
+                        result_type: int_type,
+                        result_id: res_id,
+                        val: vec![transmuted].into_boxed_slice(),
+                    });
+                }
+
+                ResultId(res_id.0)
+            },
+            TypedValue::Bool(value) => {
+                let bool_type = self.register_type(TypeName::Bool);
+                let res_id = self.get_id().to_result_id();
+
+                if value {
+                    self.declarations.push(Instruction::ConstantTrue {
+                        result_type: bool_type,
+                        result_id: res_id,
+                    });
+                } else {
+                    self.declarations.push(Instruction::ConstantFalse {
+                        result_type: bool_type,
+                        result_id: res_id,
+                    });
+                }
+
+                ResultId(res_id.0)
+            },
+            _ => unimplemented!(),
         }
     }
 
-    /// Build the module, returning a list of operations
-    pub fn get_operations(&self) -> Vec<Operation> {
-        let prog_io: Vec<u32> = self.inputs.iter()
+    /// Build the module, returning a list of instructions
+    pub fn get_operations(&self) -> Vec<Instruction> {
+        let prog_io: Vec<Id> = self.inputs.iter()
             .chain(self.outputs.iter())
             .cloned()
             .collect();
 
         vec![
             // Capabilities
-            Operation::OpCapability(Capability::Shader),
+            Instruction::Capability {
+                capability: desc::Capability::Shader
+            },
         ].iter().chain(
             // Extensions import
             self.imports.values()
                 .map(|&(_, ref op)| op)
         ).chain(vec![
             // Memory Model
-            Operation::OpMemoryModel(AddressingModel::Logical, MemoryModel::GLSL450),
+            Instruction::MemoryModel {
+                addressing_model: desc::AddressingModel::Logical,
+                memory_model: desc::MemoryModel::GLSL450
+            },
 
             // Entry points
-            Operation::OpEntryPoint(ExecutionModel::Fragment, ENTRY_ID, String::from("main"), prog_io),
+            Instruction::EntryPoint {
+                execution_model: self.mod_type,
+                func: ENTRY_ID.to_value_id(),
+                name: String::from("main"),
+                interface: prog_io.into_boxed_slice()
+            },
 
             // Execution Models
-            Operation::OpExecutionMode(ENTRY_ID, ExecutionMode::OriginUpperLeft),
+            Instruction::ExecutionMode {
+                entry: ENTRY_ID.to_value_id(),
+                execution_mode: ExecutionMode::OriginUpperLeft
+            },
         ].iter()).chain(
             // Annotations
             self.annotations.iter()
@@ -267,115 +366,54 @@ impl Module {
             self.declarations.iter()
         ).chain(vec![
             // Functions
-            Operation::OpFunction(ENTRY_ID, VOID_ID, Default::default(), FUNC_ID),
-            Operation::OpLabel(LABEL_ID),
+            Instruction::Function {
+                result_type: VOID_ID,
+                result_id: ENTRY_ID,
+                function_control: desc::FunctionControl::empty(),
+                fn_ty: FUNC_ID
+            },
+            Instruction::Label {
+                result_id: LABEL_ID
+            },
         ].iter()).chain(
             self.instructions.iter()
         ).chain(vec![
-            Operation::OpReturn,
-            Operation::OpFunctionEnd,
+            Instruction::Return,
+            Instruction::FunctionEnd,
         ].iter()).map(|r| r.clone()).collect()
     }
 
-    fn visit(&mut self, graph: &Graph<Node, ()>, node: NodeIndex<u32>) -> u32 {
-        match *graph.node_weight(node).unwrap() {
-            Node::Output(location, ref attr_type) => {
-                let type_id = self.register_type(*attr_type);
+    /// Get the instructions of the module in binary form
+    pub fn get_bytecode(&self) -> Vec<u8> {
+        vec![
+            0x07230203u32,
+            0x00010000,
+            0x000c0001,
+            self.counter.load(Ordering::SeqCst) as u32,
+            0
+        ].into_iter()
+            .chain(
+                self.get_operations().into_iter()
+                    .flat_map(|op| to_bytecode(op))
+            )
+            .flat_map(|words| unsafe {
+                let as_bytes = mem::transmute::<u32, [u8; 4]>(words);
+                vec![as_bytes[0], as_bytes[1], as_bytes[2], as_bytes[3]]
+            })
+            .collect()
+    }
 
-                let ptr_type = self.get_id();
-                self.declarations.push(Operation::OpTypePointer(ptr_type, StorageClass::Output, type_id));
+    fn visit(&mut self, graph: &Graph, node: NodeIndex<u32>) -> ResultId {
+        let args: Vec<(TypeName, ResultId)> = graph.arguments(node)
+            .map(|edge| (*edge.1, self.visit(graph, edge.0)))
+            .collect();
 
-                let var_id = self.get_id();
-                self.outputs.push(var_id);
-                self.declarations.push(Operation::OpVariable(var_id, ptr_type, StorageClass::Output));
-
-                self.annotations.push(Operation::OpDecorate(var_id, Decoration::Location, location));
-
-                let incoming_node = graph.neighbors_directed(node, Incoming).next();
-                let value_id = self.visit(graph, incoming_node.unwrap());
-                self.instructions.push(Operation::OpStore(var_id, value_id));
-
-                var_id
-            },
-            Node::Input(location, ref attr_type) => {
-                let type_id = self.register_type(*attr_type);
-
-                let ptr_type = self.get_id();
-                self.declarations.push(Operation::OpTypePointer(ptr_type, StorageClass::Input, type_id));
-
-                let var_id = self.get_id();
-                self.inputs.push(var_id);
-                self.declarations.push(Operation::OpVariable(var_id, ptr_type, StorageClass::Input));
-
-                self.annotations.push(Operation::OpDecorate(var_id, Decoration::Location, location));
-
-                let res_id = self.get_id();
-                self.instructions.push(Operation::OpLoad(res_id, type_id, var_id));
-
-                res_id
-            },
-            Node::Constant(ref const_type) => {
-                self.register_constant(*const_type)
-            },
-            Node::Normalize => {
-                let ext_id = self.import_set(String::from("GLSL.std.450"));
-
-                let float_type = self.register_type(TypeName::Vec3);
-
-                let args: Vec<u32> = graph.neighbors_directed(node, Incoming)
-                    .map(|index| self.visit(graph, index))
-                    .collect();
-
-                let result_id = self.get_id();
-                self.instructions.push(Operation::OpExtInst(result_id, float_type, ext_id, 69, args));
-
-                result_id
-            },
-            Node::Multiply => {
-                let vec_type = self.register_type(TypeName::Vec4);
-
-                let args: Vec<u32> = graph.neighbors_directed(node, Incoming)
-                    .map(|index| self.visit(graph, index))
-                    .collect();
-
-                let result_id = self.get_id();
-                self.instructions.push(Operation::OpVectorTimesScalar(result_id, vec_type, args[0], args[1]));
-
-                result_id
-            },
-            Node::Clamp => {
-                let ext_id = self.import_set(String::from("GLSL.std.450"));
-
-                let float_type = self.register_type(TypeName::Float);
-
-                let args: Vec<u32> = graph.neighbors_directed(node, Incoming)
-                    .map(|index| self.visit(graph, index))
-                    .collect();
-
-                let result_id = self.get_id();
-                self.instructions.push(Operation::OpExtInst(result_id, float_type, ext_id, 43, args));
-
-                result_id
-            },
-            Node::Dot => {
-                let float_type = self.register_type(TypeName::Float);
-
-                let args: Vec<u32> = graph.neighbors_directed(node, Incoming)
-                    .map(|index| self.visit(graph, index))
-                    .collect();
-
-                let result_id = self.get_id();
-                self.instructions.push(Operation::OpDot(result_id, float_type, args[0], args[1]));
-
-                result_id
-            },
-        }
+        graph.node(node).get_result(self, args)
     }
 }
 
 /// Transform a node graph to SPIR-V bytecode
-pub fn build_program(graph: &Graph<Node, ()>) -> Vec<u8> {
-    let program = Module::build(graph);
-    let operations = program.get_operations();
-    to_bytecode(operations)
+pub fn build_program(graph: &Graph, mod_type: ShaderType) -> Vec<u8> {
+    let program = Module::build(graph, mod_type);
+    program.get_bytecode()
 }

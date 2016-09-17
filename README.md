@@ -3,17 +3,15 @@ rasen
 Generate SPIR-V bytecode from an operation graph (heavy WIP)
 
 ```rust
-extern crate petgraph;
 extern crate rasen;
 
-use petgraph::Graph;
 use rasen::*;
 
 fn main() {
-    let mut graph = Graph::<Node, ()>::new();
+    let mut graph = Graph::new();
 
     // A vec3 input at location 0
-    let normal = graph.add_node(Node::Input(0, TypeName::Vec3));
+    let normal = graph.add_node(Node::Input(0, TypeName::Vec(3)));
 
     // Some ambient light constants
     let min_light = graph.add_node(Node::Constant(TypedValue::Float(0.1)));
@@ -30,28 +28,28 @@ fn main() {
     let multiply = graph.add_node(Node::Multiply);
 
     // And a vec4 output at location 0
-    let color = graph.add_node(Node::Output(0, TypeName::Vec4));
+    let color = graph.add_node(Node::Output(0, TypeName::Vec(4)));
 
     // Normalize the normal
-    graph.add_edge(normal, normalize, ());
+    graph.add_edge(normal, normalize);
 
     // Compute the dot product of the surface normal and the light direction
-    graph.add_edge(normalize, dot, ());
-    graph.add_edge(light_dir, dot, ());
+    graph.add_edge(normalize, dot);
+    graph.add_edge(light_dir, dot);
 
     // Restrict the result into the ambient light range
-    graph.add_edge(dot, clamp, ());
-    graph.add_edge(min_light, clamp, ());
-    graph.add_edge(max_light, clamp, ());
+    graph.add_edge(dot, clamp);
+    graph.add_edge(min_light, clamp);
+    graph.add_edge(max_light, clamp);
 
     // Multiply the light intensity by the surface color
-    graph.add_edge(clamp, multiply, ());
-    graph.add_edge(mat_color, multiply, ());
+    graph.add_edge(clamp, multiply);
+    graph.add_edge(mat_color, multiply);
 
     // Write the result to the output
-    graph.add_edge(multiply, color, ());
+    graph.add_edge(multiply, color);
 
-    let bytecode = build_program(&graph);
+    let bytecode = build_program(&graph, ShaderType::Fragment);
     // bytecode is now a Vec<u8> you can pass to Vulkan to create the shader module
 }
 ```
