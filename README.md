@@ -49,7 +49,7 @@ fn main() {
     // Write the result to the output
     graph.add_edge(multiply, color);
 
-    let bytecode = build_program(&graph, ShaderType::Fragment);
+    let bytecode = build_program(&graph, ShaderType::Fragment).unwrap();
     // bytecode is now a Vec<u8> you can pass to Vulkan to create the shader module
 }
 ```
