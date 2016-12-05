@@ -10,4 +10,4 @@ license = "MIT"
 
 [dependencies]
 petgraph = "0.2.8"
-spirv-utils = { git = "https://github.com/leops/spirv-utils.git", rev = "ef68f9c" }
+spirv-utils = { git = "https://github.com/leops/spirv-utils.git", rev = "e421592" }

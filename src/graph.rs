@@ -1,20 +1,17 @@
 //! Enumerations used in a shader graph
 
 pub use petgraph::graph::NodeIndex;
-use petgraph::graph::Externals;
 use petgraph::{
     Graph as PetGraph, Outgoing, Incoming,
-    Directed
 };
 
 use spirv_utils::*;
 use spirv_utils::desc::{
-    Id, ResultId, TypeId, ValueId
+    Id, ResultId, TypeId, ValueId,
 };
 use spirv_utils::instruction::*;
 
 use super::Module;
-use glsl::*;
 
 /// Define the type of a shader value
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -117,22 +114,85 @@ pub enum Node {
     /// Compute the cross product of 2 vectors
     ///
     /// Takes 2 parameters
-    Cross
+    Cross,
+
+    /// Round a number to the largest lower or equal integer
+    ///
+    /// Takes a single parameter
+    Floor,
+
+    /// Round a number to the nearest integer
+    ///
+    /// Takes a single parameter
+    Ceil,
+
+    /// Round a number to the smallest higher or equal integer
+    ///
+    /// Takes a single parameter
+    Round,
+
+    /// Compute the sinus of an angle in radians
+    ///
+    /// Takes a single parameter
+    Sin,
+
+    /// Compute the cosinus of an angle in radians
+    ///
+    /// Takes a single parameter
+    Cos,
+
+    /// Compute the tangent of an angle in radians
+    ///
+    /// Takes a single parameter
+    Tan,
+
+    /// Raise a number to a power
+    ///
+    /// Takes 2 parameters
+    Pow,
+
+    /// Returns the smallest value of all its arguments
+    ///
+    /// For the moment, only 2 parameters are supported
+    Min,
+
+    /// Return the greatest value of all its arguments
+    ///
+    /// For the moment, only 2 parameters are supported
+    Max,
+
+    /// Computes the length of a vector
+    ///
+    /// Takes a single parameter
+    Length,
+
+    /// Computes the distance between 2 points
+    ///
+    /// Takes 2 parameters
+    Distance,
+
+    /// Reflect a vector against a surface normal
+    ///
+    /// Takes 2 parameters
+    Reflect,
+
+    /// Computes the refraction of a vector using a surface normal and a refraction indice
+    ///
+    /// Takes 3 parameters
+    Refract,
 }
 
 macro_rules! impl_math_op {
-    ( $args:ident, $module:ident, $iopcode:ident, $fopcode:ident ) => {
+    ( $args:ident, $module:ident, $name:expr, $iopcode:ident, $fopcode:ident ) => {
         {
             if $args.len() != 2 {
-                return Err("Wrong number of arguments");
+                return Err(concat!("Wrong number of arguments for ", $name));
             }
 
             let result_id = $module.get_id();
 
             let (l_type, l_value) = $args[0];
             let (r_type, r_value) = $args[1];
-            let l_value = l_value;
-            let r_value = r_value;
 
             match (l_type, r_type) {
                 (Int, Int) => {
@@ -167,7 +227,7 @@ macro_rules! impl_glsl_call {
     ( $args:ident, $module:ident, $function:expr, $argc:expr, $result:expr ) => {
         {
             if $args.len() != $argc {
-                return Err("Wrong number of arguments for Normalize");
+                return Err(concat!("Wrong number of arguments for ", stringify!($function)));
             }
 
             let ext_id = $module.import_set(String::from("GLSL.std.450"));
@@ -197,6 +257,7 @@ impl Node {
     /// Insert this Node into a Program
     pub fn get_result(&self, module: &mut Module, args: Vec<(TypeName, u32)>) -> Result<u32, &'static str> {
         use TypeName::*;
+        use glsl::GLSL::*;
 
         Ok(match *self {
             Node::Output(location, ref attr_type) => {
@@ -284,17 +345,17 @@ impl Node {
 
             Node::Normalize => impl_glsl_call!(
                 args, module,
-                GLSL::Normalize,
+                Normalize,
                 1, TypeName::Vec(3)
             ),
 
             Node::Add => impl_math_op!(
-                args, module,
+                args, module, "Add",
                 IAdd, FAdd
             ),
 
             Node::Substract => impl_math_op!(
-                args, module,
+                args, module, "Substract",
                 ISub, FSub
             ),
 
@@ -418,26 +479,291 @@ impl Node {
             },
 
             Node::Divide => impl_math_op!(
-                args, module,
+                args, module, "Divide",
                 SDiv, FDiv
             ),
 
             Node::Modulus => impl_math_op!(
-                args, module,
+                args, module, "Modulus",
                 SMod, FMod
             ),
 
             Node::Clamp => impl_glsl_call!(
                 args, module,
-                GLSL::FClamp,
+                FClamp,
                 3, TypeName::Float
             ),
 
             Node::Cross => impl_glsl_call!(
                 args, module,
-                GLSL::Cross,
+                Cross,
                 2, TypeName::Float
             ),
+
+            Node::Floor => impl_glsl_call!(
+                args, module,
+                Floor,
+                1, TypeName::Float
+            ),
+
+            Node::Ceil => impl_glsl_call!(
+                args, module,
+                Ceil,
+                1, TypeName::Float
+            ),
+
+            Node::Round => impl_glsl_call!(
+                args, module,
+                Round,
+                1, TypeName::Float
+            ),
+
+            Node::Sin => impl_glsl_call!(
+                args, module,
+                Sin,
+                1, TypeName::Float
+            ),
+
+            Node::Cos => impl_glsl_call!(
+                args, module,
+                Cos,
+                1, TypeName::Float
+            ),
+
+            Node::Tan => impl_glsl_call!(
+                args, module,
+                Tan,
+                1, TypeName::Float
+            ),
+
+            Node::Pow => impl_glsl_call!(
+                args, module,
+                Pow,
+                2, TypeName::Float
+            ),
+
+            Node::Min => {
+                if args.len() != 2 {
+                    return Err("Wrong number of arguments for Min");
+                }
+
+                let ext_id = module.import_set(String::from("GLSL.std.450"));
+
+                let result_id = module.get_id();
+
+                let (l_type, _) = args[0];
+                let (r_type, _) = args[1];
+
+                let args: ::std::vec::Vec<_> = args.into_iter()
+                    .map(|(_, rid)| Id(rid))
+                    .collect();
+
+                match (l_type, r_type) {
+                    (Int, Int) => {
+                        let int_type = module.register_type(l_type);
+
+                        module.instructions.push(Instruction::ExtInst {
+                            result_type: TypeId(int_type),
+                            result_id: ResultId(result_id),
+                            set: ValueId(ext_id),
+                            instruction: SMin as u32,
+                            operands: args.into_boxed_slice(),
+                        });
+                    },
+                    (Float, Float) => {
+                        let float_type = module.register_type(l_type);
+
+                        module.instructions.push(Instruction::ExtInst {
+                            result_type: TypeId(float_type),
+                            result_id: ResultId(result_id),
+                            set: ValueId(ext_id),
+                            instruction: FMin as u32,
+                            operands: args.into_boxed_slice(),
+                        });
+                    },
+                    _ => return Err("Unsupported Min operation")
+                }
+
+                result_id
+            },
+
+            Node::Max => {
+                if args.len() != 2 {
+                    return Err("Wrong number of arguments for Max");
+                }
+
+                let ext_id = module.import_set(String::from("GLSL.std.450"));
+
+                let result_id = module.get_id();
+
+                let (l_type, _) = args[0];
+                let (r_type, _) = args[1];
+
+                let args: ::std::vec::Vec<_> = args.into_iter()
+                    .map(|(_, rid)| Id(rid))
+                    .collect();
+
+                match (l_type, r_type) {
+                    (Int, Int) => {
+                        let int_type = module.register_type(l_type);
+
+                        module.instructions.push(Instruction::ExtInst {
+                            result_type: TypeId(int_type),
+                            result_id: ResultId(result_id),
+                            set: ValueId(ext_id),
+                            instruction: SMax as u32,
+                            operands: args.into_boxed_slice(),
+                        });
+                    },
+                    (Float, Float) => {
+                        let float_type = module.register_type(l_type);
+
+                        module.instructions.push(Instruction::ExtInst {
+                            result_type: TypeId(float_type),
+                            result_id: ResultId(result_id),
+                            set: ValueId(ext_id),
+                            instruction: FMax as u32,
+                            operands: args.into_boxed_slice(),
+                        });
+                    },
+                    _ => return Err("Unsupported Max operation")
+                }
+
+                result_id
+            },
+
+            Node::Length => {
+                if args.len() != 1 {
+                    return Err("Wrong number of arguments for Length");
+                }
+
+                let (arg_type, arg_val) = args[0];
+                if let Vec(_) = arg_type {
+                    let ext_id = module.import_set(String::from("GLSL.std.450"));
+
+                    let result_id = module.get_id();
+                    let res_type = module.register_type(arg_type);
+
+                    let args = vec![
+                        Id(arg_val)
+                    ];
+
+                    module.instructions.push(Instruction::ExtInst {
+                        result_type: TypeId(res_type),
+                        result_id: ResultId(result_id),
+                        set: ValueId(ext_id),
+                        instruction: Length as u32,
+                        operands: args.into_boxed_slice(),
+                    });
+
+                    result_id
+                } else {
+                    return Err("Unsupported Length operation");
+                }
+            },
+
+            Node::Distance => {
+                if args.len() != 2 {
+                    return Err("Wrong number of arguments for Distance");
+                }
+
+                let ext_id = module.import_set(String::from("GLSL.std.450"));
+
+                let result_id = module.get_id();
+
+                let (l_type, _) = args[0];
+                let (r_type, _) = args[1];
+
+                let args: ::std::vec::Vec<_> = args.into_iter()
+                    .map(|(_, rid)| Id(rid))
+                    .collect();
+
+                match (l_type, r_type) {
+                    (Vec(l_size), Vec(r_size)) if l_size == r_size => {
+                        let vec_type = module.register_type(l_type);
+
+                        module.instructions.push(Instruction::ExtInst {
+                            result_type: TypeId(vec_type),
+                            result_id: ResultId(result_id),
+                            set: ValueId(ext_id),
+                            instruction: Distance as u32,
+                            operands: args.into_boxed_slice(),
+                        });
+                    },
+                    _ => return Err("Unsupported Distance operation")
+                }
+
+                result_id
+            },
+
+            Node::Reflect => {
+                if args.len() != 2 {
+                    return Err("Wrong number of arguments for Reflect");
+                }
+
+                let ext_id = module.import_set(String::from("GLSL.std.450"));
+
+                let result_id = module.get_id();
+
+                let (l_type, _) = args[0];
+                let (r_type, _) = args[1];
+
+                let args: ::std::vec::Vec<_> = args.into_iter()
+                    .map(|(_, rid)| Id(rid))
+                    .collect();
+
+                match (l_type, r_type) {
+                    (Vec(l_size), Vec(r_size)) if l_size == r_size => {
+                        let vec_type = module.register_type(l_type);
+
+                        module.instructions.push(Instruction::ExtInst {
+                            result_type: TypeId(vec_type),
+                            result_id: ResultId(result_id),
+                            set: ValueId(ext_id),
+                            instruction: Reflect as u32,
+                            operands: args.into_boxed_slice(),
+                        });
+                    },
+                    _ => return Err("Unsupported Reflect operation")
+                }
+
+                result_id
+            },
+
+            Node::Refract => {
+                if args.len() != 3 {
+                    return Err("Wrong number of arguments for Reflect");
+                }
+
+                let result_id = module.get_id();
+
+                let (l_type, _) = args[0];
+                let (r_type, _) = args[1];
+                let (i_type, _) = args[2];
+
+                match (l_type, r_type, i_type) {
+                    (Vec(l_size), Vec(r_size), Float) if l_size == r_size => {
+                        let vec_type = module.register_type(l_type);
+
+                        let ext_id = module.import_set(String::from("GLSL.std.450"));
+
+                        let args: ::std::vec::Vec<_> = args.into_iter()
+                            .map(|(_, rid)| Id(rid))
+                            .collect();
+
+                        module.instructions.push(Instruction::ExtInst {
+                            result_type: TypeId(vec_type),
+                            result_id: ResultId(result_id),
+                            set: ValueId(ext_id),
+                            instruction: Refract as u32,
+                            operands: args.into_boxed_slice(),
+                        });
+                    },
+                    _ => return Err("Unsupported Refract operation")
+                }
+
+                result_id
+            },
 
             Node::Dot => {
                 if args.len() != 2 {
@@ -464,7 +790,7 @@ impl Node {
 /// Wrapper for the petgraph::Graph struct, with type inference on the edges
 #[derive(Debug)]
 pub struct Graph {
-    graph: PetGraph<Node, ()>
+    graph: PetGraph<Node, u32>
 }
 
 impl Graph {
@@ -481,8 +807,8 @@ impl Graph {
     }
 
     /// Add an edge between two nodes in the graph, infering the result type of the origin node
-    pub fn add_edge(&mut self, from: NodeIndex<u32>, to: NodeIndex<u32>) {
-        self.graph.add_edge(from, to, ());
+    pub fn add_edge(&mut self, from: NodeIndex<u32>, to: NodeIndex<u32>, index: u32) {
+        self.graph.add_edge(from, to, index);
     }
 
     /// Get a node from the graph
@@ -491,13 +817,23 @@ impl Graph {
     }
 
     /// List all the outputs of the graph
-    pub fn outputs(&self) -> Externals<Node, Directed> {
-        self.graph.externals(Outgoing)
+    pub fn outputs<'a>(&'a self) -> Box<Iterator<Item=NodeIndex<u32>> + 'a> {
+        Box::new(
+            self.graph.externals(Outgoing)
+                .filter(move |index| match self.graph[*index] {
+                    Node::Output(_, _) => true,
+                    _ => false,
+                })
+        )
     }
 
     /// List the incoming connections for a node
     pub fn arguments(&self, index: NodeIndex<u32>) -> Result<Vec<(NodeIndex<u32>, TypeName)>, &'static str> {
-        self.graph.edges_directed(index, Incoming)
+        let mut vec: Vec<(NodeIndex<u32>, &u32)> = self.graph.edges_directed(index, Incoming).collect();
+
+        vec.sort_by_key(|&(_, k)| k);
+
+        vec.into_iter()
             .map(|(node, _)| Ok((node, try!(self.infer_type(node)))))
             .collect()
     }
@@ -565,6 +901,61 @@ impl Graph {
             Node::Cross => {
                 if args.is_empty() {
                     return Err("Not enough arguments to infer type for Cross")
+                }
+
+                args[0]
+            },
+            Node::Floor => TypeName::Int,
+            Node::Ceil => TypeName::Int,
+            Node::Round => TypeName::Int,
+            Node::Sin => TypeName::Float,
+            Node::Cos => TypeName::Float,
+            Node::Tan => TypeName::Float,
+            Node::Pow => {
+                if args.is_empty() {
+                    return Err("Not enough arguments to infer type for Pow")
+                }
+
+                args[0]
+            },
+            Node::Min => {
+                if args.is_empty() {
+                    return Err("Not enough arguments to infer type for Min")
+                }
+
+                args[0]
+            },
+            Node::Max => {
+                if args.is_empty() {
+                    return Err("Not enough arguments to infer type for Max")
+                }
+
+                args[0]
+            },
+            Node::Length => {
+                if args.is_empty() {
+                    return Err("Not enough arguments to infer type for Length")
+                }
+
+                args[0]
+            },
+            Node::Distance => {
+                if args.is_empty() {
+                    return Err("Not enough arguments to infer type for Distance")
+                }
+
+                args[0]
+            },
+            Node::Reflect => {
+                if args.is_empty() {
+                    return Err("Not enough arguments to infer type for Reflect")
+                }
+
+                args[0]
+            },
+            Node::Refract => {
+                if args.is_empty() {
+                    return Err("Not enough arguments to infer type for Refract")
                 }
 
                 args[0]

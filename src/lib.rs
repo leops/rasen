@@ -32,23 +32,23 @@
 //!     let color = graph.add_node(Node::Output(0, TypeName::Vec(4)));
 //!
 //!     // Normalize the normal
-//!     graph.add_edge(normal, normalize);
+//!     graph.add_edge(normal, normalize, 0);
 //!
 //!     // Compute the dot product of the surface normal and the light direction
-//!     graph.add_edge(normalize, dot);
-//!     graph.add_edge(light_dir, dot);
+//!     graph.add_edge(normalize, dot, 0);
+//!     graph.add_edge(light_dir, dot, 1);
 //!
 //!     // Restrict the result into the ambient light range
-//!     graph.add_edge(dot, clamp);
-//!     graph.add_edge(min_light, clamp);
-//!     graph.add_edge(max_light, clamp);
+//!     graph.add_edge(dot, clamp, 0);
+//!     graph.add_edge(min_light, clamp, 1);
+//!     graph.add_edge(max_light, clamp, 2);
 //!
 //!     // Multiply the light intensity by the surface color
-//!     graph.add_edge(clamp, multiply);
-//!     graph.add_edge(mat_color, multiply);
+//!     graph.add_edge(clamp, multiply, 0);
+//!     graph.add_edge(mat_color, multiply, 1);
 //!
 //!     // Write the result to the output
-//!     graph.add_edge(multiply, color);
+//!     graph.add_edge(multiply, color, 0);
 //!
 //!     let bytecode = build_program(&graph, ShaderType::Fragment).unwrap();
 //!     // bytecode is now a Vec<u8> you can pass to Vulkan to create the shader module
