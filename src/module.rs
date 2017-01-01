@@ -31,6 +31,8 @@ const FUNC_ID: TypeId = TypeId(2);
 const LABEL_ID: ResultId = ResultId(3);
 const ENTRY_ID: ResultId = ResultId(4);
 
+include!(concat!(env!("OUT_DIR"), "/module.rs"));
+
 impl Module {
     /// Create a new shader module with some predefined base values
     pub fn new(mod_type: ShaderType) -> Module {
@@ -61,7 +63,7 @@ impl Module {
     pub fn build(graph: &Graph, mod_type: ShaderType) -> Result<Module, &'static str> {
         let mut program = Module::new(mod_type);
         for node in graph.outputs() {
-            try!(program.visit(graph, node));
+            program.visit(graph, node)?;
         }
 
         Ok(program)
@@ -141,29 +143,33 @@ impl Module {
 
                 bool_id
             },
-            TypeName::Int => {
+            TypeName::Int(is_signed) => {
                 let int_id = self.get_id();
 
                 self.declarations.push(Instruction::TypeInt {
                     result_type: TypeId(int_id),
                     width: 32,
-                    signed: true
+                    signed: is_signed
                 });
 
                 int_id
             },
-            TypeName::Float => {
+            TypeName::Float(is_double) => {
                 let float_id = self.get_id();
 
                 self.declarations.push(Instruction::TypeFloat {
                     result_type: TypeId(float_id),
-                    width: 32,
+                    width: if is_double {
+                        64
+                    } else {
+                        32
+                    },
                 });
 
                 float_id
             },
-            TypeName::Vec(len) => {
-                let float_id = self.register_type(TypeName::Float);
+            TypeName::Vec(len, scalar) => {
+                let float_id = self.register_type(*scalar);
                 let vec_id = self.get_id();
 
                 self.declarations.push(Instruction::TypeVector {
@@ -174,8 +180,8 @@ impl Module {
 
                 vec_id
             },
-            TypeName::Mat(len) => {
-                let float_id = self.register_type(TypeName::Float);
+            TypeName::Mat(len, scalar) => {
+                let float_id = self.register_type(*scalar);
                 let mat_id = self.get_id();
 
                 self.declarations.push(Instruction::TypeMatrix {
@@ -194,193 +200,109 @@ impl Module {
 
     /// Add a new constant to the module, returning its ID
     pub fn register_constant(&mut self, constant: TypedValue) -> Result<u32, &'static str> {
-        Ok(match constant {
-            TypedValue::Vec4(x, y, z, w) => {
-                let x_id = ValueId(try!(self.register_constant(TypedValue::Float(x))));
-                let y_id = ValueId(try!(self.register_constant(TypedValue::Float(y))));
-                let z_id = ValueId(try!(self.register_constant(TypedValue::Float(z))));
-                let w_id = ValueId(try!(self.register_constant(TypedValue::Float(w))));
-
-                let vec_type = self.register_type(TypeName::Vec(4));
-                let res_id = self.get_id();
-                self.declarations.push(Instruction::ConstantComposite {
-                    result_type: TypeId(vec_type),
-                    result_id: ResultId(res_id),
-                    flds: vec![
-                        x_id, y_id, z_id, w_id
-                    ].into_boxed_slice(),
-                });
-
-                res_id
-            },
-            TypedValue::Vec3(x, y, z) => {
-                let x_id = ValueId(try!(self.register_constant(TypedValue::Float(x))));
-                let y_id = ValueId(try!(self.register_constant(TypedValue::Float(y))));
-                let z_id = ValueId(try!(self.register_constant(TypedValue::Float(z))));
-
-                let vec_type = self.register_type(TypeName::Vec(3));
-                let res_id = self.get_id();
-                self.declarations.push(Instruction::ConstantComposite {
-                    result_type: TypeId(vec_type),
-                    result_id: ResultId(res_id),
-                    flds: vec![x_id, y_id, z_id].into_boxed_slice(),
-                });
-
-                res_id
-            },
-            TypedValue::Vec2(x, y) => {
-                let x_id = ValueId(try!(self.register_constant(TypedValue::Float(x))));
-                let y_id = ValueId(try!(self.register_constant(TypedValue::Float(y))));
-
-                let vec_type = self.register_type(TypeName::Vec(2));
-                let res_id = self.get_id();
-                self.declarations.push(Instruction::ConstantComposite {
-                    result_type: TypeId(vec_type),
-                    result_id: ResultId(res_id),
-                    flds: vec![x_id, y_id].into_boxed_slice(),
-                });
-
-                res_id
-            },
-            TypedValue::Float(value) => {
-                let float_type = self.register_type(TypeName::Float);
-                let res_id = self.get_id();
-
-                unsafe {
-                    let transmuted = mem::transmute::<f32, u32>(value);
-                    self.declarations.push(Instruction::Constant {
-                        result_type: TypeId(float_type),
-                        result_id: ResultId(res_id),
-                        val: vec![transmuted].into_boxed_slice(),
-                    });
-                }
-
-                res_id
-            },
-            TypedValue::Int(value) => {
-                let int_type = self.register_type(TypeName::Int);
-                let res_id = self.get_id();
-
-                unsafe {
-                    let transmuted = mem::transmute::<i32, u32>(value);
-                    self.declarations.push(Instruction::Constant {
-                        result_type: TypeId(int_type),
-                        result_id: ResultId(res_id),
-                        val: vec![transmuted].into_boxed_slice(),
-                    });
-                }
-
-                res_id
-            },
-            TypedValue::Bool(value) => {
-                let bool_type = self.register_type(TypeName::Bool);
-                let res_id = self.get_id();
-
-                if value {
-                    self.declarations.push(Instruction::ConstantTrue {
-                        result_type: TypeId(bool_type),
-                        result_id: ResultId(res_id),
-                    });
-                } else {
-                    self.declarations.push(Instruction::ConstantFalse {
-                        result_type: TypeId(bool_type),
-                        result_id: ResultId(res_id),
-                    });
-                }
-
-                res_id
-            },
-            _ => return Err("Unimplemented constant type"),
-        })
+        impl_register_constant!(self, constant)
     }
 
     fn visit(&mut self, graph: &Graph, node: NodeIndex<u32>) -> Result<u32, &'static str> {
-        let args = try!(graph.arguments(node));
+        let args = graph.arguments(node)?;
 
-        let first: Vec<_> = args.iter().map(|&(_, tname)| tname).collect();
-        let second: Vec<_> = try!(args.iter().map(|edge| self.visit(graph, edge.0)).collect());
-
-        let args: Vec<_> = first.into_iter()
-            .zip(second.into_iter())
-            .collect();
+        let args: Vec<_> = try!(
+            args.iter().map(|&(_, tname)| Ok(tname))
+                .zip(
+                    args.iter().map(|edge| self.visit(graph, edge.0))
+                )
+                .map(|(a, b)| Ok((a?, b?)))
+                .collect()
+        );
 
         graph.node(node).get_result(self, args)
     }
 
     /// Build the module, returning a list of instructions
     pub fn get_operations(&self) -> Vec<Instruction> {
+        let mut result = Vec::with_capacity(
+            self.imports.len() +
+            self.annotations.len() +
+            self.declarations.len() +
+            self.instructions.len() + 8
+        );
+
+        // Capabilities
+        result.push(Instruction::Capability {
+            capability: desc::Capability::Shader
+        });
+
+        // Extensions import
+        for &(_, ref op) in self.imports.values() {
+            result.push(op.clone());
+        }
+
+        // Memory Model
+        result.push(Instruction::MemoryModel {
+            addressing_model: desc::AddressingModel::Logical,
+            memory_model: desc::MemoryModel::GLSL450
+        });
+
+        // Entry points
         let prog_io: Vec<Id> = self.get_io()
             .into_iter()
             .map(|i| Id(i))
             .collect();
+        result.push(Instruction::EntryPoint {
+            execution_model: self.mod_type,
+            func: ENTRY_ID.to_value_id(),
+            name: String::from("main"),
+            interface: prog_io.into_boxed_slice()
+        });
 
-        vec![
-            // Capabilities
-            Instruction::Capability {
-                capability: desc::Capability::Shader
-            },
-        ].iter().chain(
-            // Extensions import
-            self.imports.values()
-                .map(|&(_, ref op)| op)
-        ).chain(vec![
-            // Memory Model
-            Instruction::MemoryModel {
-                addressing_model: desc::AddressingModel::Logical,
-                memory_model: desc::MemoryModel::GLSL450
-            },
+        // Execution Models
+        result.push(Instruction::ExecutionMode {
+            entry: ENTRY_ID.to_value_id(),
+            execution_mode: ExecutionMode::OriginUpperLeft
+        });
 
-            // Entry points
-            Instruction::EntryPoint {
-                execution_model: self.mod_type,
-                func: ENTRY_ID.to_value_id(),
-                name: String::from("main"),
-                interface: prog_io.into_boxed_slice()
-            },
+        // Annotations
+        result.append(&mut self.annotations.clone());
 
-            // Execution Models
-            Instruction::ExecutionMode {
-                entry: ENTRY_ID.to_value_id(),
-                execution_mode: ExecutionMode::OriginUpperLeft
-            },
-        ].iter()).chain(
-            // Annotations
-            self.annotations.iter()
-        ).chain(
-            // Declarations
-            self.declarations.iter()
-        ).chain(vec![
-            // Functions
-            Instruction::Function {
-                result_type: VOID_ID,
-                result_id: ENTRY_ID,
-                function_control: desc::FunctionControl::empty(),
-                fn_ty: FUNC_ID
-            },
-            Instruction::Label {
-                result_id: LABEL_ID
-            },
-        ].iter()).chain(
-            self.instructions.iter()
-        ).chain(vec![
-            Instruction::Return,
-            Instruction::FunctionEnd,
-        ].iter()).map(|r| r.clone()).collect()
+        // Declarations
+        result.append(&mut self.declarations.clone());
+
+        // Functions
+        result.push(Instruction::Function {
+            result_type: VOID_ID,
+            result_id: ENTRY_ID,
+            function_control: desc::FunctionControl::empty(),
+            fn_ty: FUNC_ID
+        });
+        result.push(Instruction::Label {
+            result_id: LABEL_ID
+        });
+
+        result.append(&mut self.instructions.clone());
+
+        result.push(Instruction::Return);
+        result.push(Instruction::FunctionEnd);
+
+        result
     }
 
     /// Get the instructions of the module in binary form
     pub fn get_bytecode(&self) -> Vec<u8> {
-        vec![
-            0x07230203u32,
-            0x00010000,
-            0x000c0001,
-            self.bound(),
-            0
-        ].into_iter()
-            .chain(
-                self.get_operations().into_iter()
-                    .flat_map(|op| to_bytecode(op))
-            )
+        let operations = self.get_operations();
+
+        let mut res = Vec::with_capacity(operations.len() + 5);
+
+        res.push(0x07230203u32);
+        res.push(0x00010000);
+        res.push(0x000c0001);
+        res.push(self.bound());
+        res.push(0);
+
+        for op in operations {
+            res.append(&mut to_bytecode(op));
+        }
+
+        res.into_iter()
             .flat_map(|words| unsafe {
                 let as_bytes = mem::transmute::<u32, [u8; 4]>(words);
                 vec![as_bytes[0], as_bytes[1], as_bytes[2], as_bytes[3]]
