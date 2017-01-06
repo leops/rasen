@@ -1,6 +1,6 @@
 [package]
 name = "rasen"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["l3ops <root@leops.me>"]
 description = "Generate SPIR-V bytecode from an operation graph"
 repository = "https://github.com/leops/rasen"
@@ -9,14 +9,10 @@ keywords = ["SPIRV", "Vulkan", "GLSL"]
 license = "MIT"
 build = "build.rs"
 
-[features]
-default = ["aster/with-syntex", "syntex_syntax"]
-nightly = []
-
 [build-dependencies]
-aster = { version = "*", default_features = false }
-syntex_syntax = { version = "*", optional = true }
+quote = "0.3"
 
 [dependencies]
 petgraph = "0.2.8"
 spirv-utils = { git = "https://github.com/leops/spirv-utils.git", rev = "e421592" }
+error-chain = "*"

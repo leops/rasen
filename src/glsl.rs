@@ -2,7 +2,7 @@
 
 /// Enumeration of the GLSL STD 450 functions
 #[repr(u32)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 pub enum GLSL {
     Round = 1,
     RoundEven = 2,

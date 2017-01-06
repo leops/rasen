@@ -59,27 +59,28 @@
 //! directly into it.
 //!
 
-#![feature(associated_consts)]
+#![feature(associated_consts, conservative_impl_trait)]
 
 extern crate petgraph;
 extern crate spirv_utils;
+#[macro_use]
+extern crate error_chain;
 
 pub mod graph;
 pub mod glsl;
+pub mod errors;
 
-mod types {
-    include!(concat!(env!("OUT_DIR"), "/types.rs"));
-}
-
+mod types;
 mod operations;
 mod module;
 mod node;
 
-pub use module::*;
+use errors::*;
 pub use graph::*;
+pub use module::*;
 
 /// Transform a node graph to SPIR-V bytecode
-pub fn build_program(graph: &Graph, mod_type: ShaderType) -> Result<Vec<u8>, &'static str> {
-    let program = try!(Module::build(graph, mod_type));
+pub fn build_program(graph: &Graph, mod_type: ShaderType) -> Result<Vec<u8>> {
+    let program = Module::build(graph, mod_type)?;
     Ok(program.get_bytecode())
 }
