@@ -359,6 +359,16 @@ fn nodes(out_dir: &String) {
             /// Incoming values from other nodes are ignored
             Constant(TypedValue),
 
+            /// Build a composite object (only vectors are supported at the moment)
+            ///
+            /// Uses 2, 3 or 4 arguments depending on the specified output type
+            Construct(&'static TypeName),
+
+            /// Extract a value from a composite object
+            ///
+            /// Takes a single argument (only vector types are supported)
+            Extract(u32),
+
             #( #node_variants ),*
         }
 
@@ -370,6 +380,8 @@ fn nodes(out_dir: &String) {
                     &Node::Input(..) => "Input",
                     &Node::Output(..) => "Output",
                     &Node::Constant(..) => "Constant",
+                    &Node::Construct(..) => "Construct",
+                    &Node::Extract(..) => "Extract",
                     #( #to_string_arms ),*
                 }
             }

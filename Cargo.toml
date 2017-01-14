@@ -1,6 +1,6 @@
 [package]
 name = "rasen"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["l3ops <root@leops.me>"]
 description = "Generate SPIR-V bytecode from an operation graph"
 repository = "https://github.com/leops/rasen"

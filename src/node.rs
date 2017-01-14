@@ -136,6 +136,67 @@ impl Node {
 
             &Node::Constant(ref const_type) => Ok((const_type.to_type_name(), module.register_constant(const_type)?)),
 
+            &Node::Construct(output_type) => {
+                let type_id = module.register_type(output_type);
+                let res_id = module.get_id();
+
+                module.instructions.push(Instruction::CompositeConstruct {
+                    result_type: TypeId(type_id),
+                    result_id: ResultId(res_id),
+                    fields: match output_type {
+                        &TypeName::Vec(size, data_type) => {
+                            if args.len() != size as usize {
+                                Err(ErrorKind::WrongArgumentsCount(args.len(), size as usize))?;
+                            }
+
+                            let res: Result<Vec<_>> =
+                                args.into_iter()
+                                    .map(|(ty, val)| {
+                                        if ty != data_type {
+                                            Err(ErrorKind::BadArguments(Box::new([ ty ])))?;
+                                        }
+
+                                        Ok(ValueId(val))
+                                    })
+                                    .collect();
+
+                            res?.into_boxed_slice()
+                        },
+                        _ => Err(ErrorKind::BadArguments(Box::new([ output_type ])))?,
+                    },
+                });
+
+                Ok((output_type, res_id))
+            },
+
+            &Node::Extract(index) => {
+                if args.len() != 1 {
+                    Err(ErrorKind::WrongArgumentsCount(args.len(), 1))?;
+                }
+
+                let (arg_type, arg_value) = args[0];
+                match arg_type {
+                    &TypeName::Vec(len, data_ty) => {
+                        if index >= len {
+                            Err(format!("Index out of bounds ({} >= {})", index, len))?;
+                        }
+
+                        let type_id = module.register_type(data_ty);
+                        let res_id = module.get_id();
+
+                        module.instructions.push(Instruction::CompositeExtract {
+                            result_type: TypeId(type_id),
+                            result_id: ResultId(res_id),
+                            obj: ValueId(arg_value),
+                            indices: Box::new([ index ]),
+                        });
+
+                        Ok((data_ty, res_id))
+                    },
+                    _ => Err(ErrorKind::BadArguments(Box::new([ arg_type ])))?,
+                }
+            },
+
             &Node::Add => operations::add(module, args),
             &Node::Substract => operations::substract(module, args),
             &Node::Multiply => operations::multiply(module, args),

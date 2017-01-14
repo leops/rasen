@@ -54,12 +54,10 @@ impl Graph {
 
     /// List the incoming connections for a node
     pub fn arguments(&self, index: NodeIndex<u32>) -> Vec<NodeIndex<u32>> {
-        let mut vec: Vec<_> =
-            self.graph.edges_directed(index, Incoming)
-                .map(|(k, _)| k)
-                .collect();
+        let mut vec: Vec<_> = self.graph.edges_directed(index, Incoming).collect();
 
-        vec.sort();
-        vec
+        vec.sort_by_key(|&(_, w)| w);
+
+        vec.into_iter().map(|(k, _)| k).collect()
     }
 }
