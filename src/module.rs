@@ -21,15 +21,15 @@ enum CachedConstant {
     Bool(bool),
     Int(i32),
     UInt(u32),
-    Float(u64, i16, i8),
-    Double(u64, i16, i8),
+    Float(bool, i16, u32),
+    Double(bool, i16, u64),
 }
 
 impl CachedConstant {
     #[inline]
     pub fn from_f64(val: f64) -> Self {
         let bits: u64 = unsafe { mem::transmute(val) };
-        let sign: i8 = if bits >> 63 == 0 { 1 } else { -1 };
+        let sign = bits >> 63 == 0;
         let mut exponent: i16 = ((bits >> 52) & 0x7ff) as i16;
         let mantissa = if exponent == 0 {
             (bits & 0xfffffffffffff) << 1
@@ -38,13 +38,13 @@ impl CachedConstant {
         };
 
         exponent -= 1023 + 52;
-        CachedConstant::Double(mantissa, exponent, sign)
+        CachedConstant::Double(sign, exponent, mantissa)
     }
 
     #[inline]
     fn from_f32(f: f32) -> Self {
         let bits: u32 = unsafe { mem::transmute(f) };
-        let sign: i8 = if bits >> 31 == 0 { 1 } else { -1 };
+        let sign = bits >> 31 == 0;
         let mut exponent: i16 = ((bits >> 23) & 0xff) as i16;
         let mantissa = if exponent == 0 {
             (bits & 0x7fffff) << 1
@@ -53,7 +53,7 @@ impl CachedConstant {
         };
 
         exponent -= 127 + 23;
-        CachedConstant::Float(mantissa as u64, exponent, sign)
+        CachedConstant::Float(sign, exponent, mantissa)
     }
 }
 
@@ -64,7 +64,7 @@ pub struct Module {
     counter: AtomicUsize,
     pub inputs: Vec<Id>,
     pub outputs: Vec<Id>,
-    imports: HashMap<String, (ValueId, Instruction)>,
+    imports: HashMap<&'static str, (ValueId, Instruction)>,
     pub annotations: Vec<Instruction>,
     pub declarations: Vec<Instruction>,
     pub instructions: Vec<Instruction>,
@@ -143,7 +143,7 @@ impl Module {
 
     /// Get the list of extensions imported by this module
     #[inline]
-    pub fn get_imports(&self) -> Vec<String> {
+    pub fn get_imports(&self) -> Vec<&'static str> {
         self.imports.keys().cloned().collect()
     }
 
@@ -174,27 +174,27 @@ impl Module {
     }
 
     /// Import an instruction set to the module, returning its ID
-    pub fn import_set(&mut self, name: String) -> u32 {
-        if let Some(ext) = self.imports.get(&name) {
-            return (ext.0).0;
+    pub fn import_set(&mut self, name: &'static str) -> ValueId {
+        if let Some(&(id, _)) = self.imports.get(&name) {
+            return id;
         }
 
         let ext_id = self.get_id();
-        self.imports.insert(name.clone(), (ValueId(ext_id), Instruction::ExtInstImport {
+        self.imports.insert(name, (ValueId(ext_id), Instruction::ExtInstImport {
             result_id: ResultId(ext_id),
-            name: name.clone(),
+            name: String::from(name),
         }));
 
-        ext_id
+        ValueId(ext_id)
     }
 
     /// Get the ID corresponding to a Type
-    pub fn register_type(&mut self, type_id: &'static TypeName) -> u32 {
+    pub fn register_type(&mut self, type_id: &'static TypeName) -> TypeId {
         if let Some(reg_id) = self.types.get(type_id) {
-            return reg_id.0;
+            return *reg_id;
         }
 
-        let res_id = match type_id {
+        let res_id = TypeId(match type_id {
             &TypeName::Bool => {
                 let bool_id = self.get_id();
 
@@ -235,7 +235,7 @@ impl Module {
 
                 self.declarations.push(Instruction::TypeVector {
                     result_type: TypeId(vec_id),
-                    type_id: TypeId(float_id),
+                    type_id: float_id,
                     len: len,
                 });
 
@@ -247,15 +247,15 @@ impl Module {
 
                 self.declarations.push(Instruction::TypeMatrix {
                     result_type: TypeId(mat_id),
-                    type_id: TypeId(float_id),
+                    type_id: float_id,
                     cols: len,
                 });
 
                 mat_id
             },
-        };
+        });
 
-        self.types.insert(type_id, TypeId(res_id));
+        self.types.insert(type_id, res_id);
         res_id
     }
 
@@ -291,11 +291,10 @@ impl Module {
 
         let args: Result<Vec<_>> =
             graph.arguments(index)
-                .into_iter()
                 .map(|edge| self.visit(graph, edge))
                 .collect();
 
-        let node = graph.node(index);
+        let ref node = graph[index];
         let res = node.get_result(self, args?)
             .chain_err(|| ErrorKind::BuildError(node.to_string(), index.index()))?;
 

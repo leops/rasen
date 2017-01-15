@@ -1,6 +1,6 @@
 use spirv_utils::instruction::*;
 use spirv_utils::desc::{
-    ResultId, TypeId, ValueId,
+    ResultId, ValueId,
 };
 
 use module::Module;
@@ -12,7 +12,7 @@ fn imul(module: &mut Module, res_type: &'static TypeName, res_id: u32, lhs: u32,
     let res_type = module.register_type(res_type);
 
     module.instructions.push(Instruction::IMul {
-        result_type: TypeId(res_type),
+        result_type: res_type,
         result_id: ResultId(res_id),
         lhs: ValueId(lhs),
         rhs: ValueId(rhs),
@@ -23,7 +23,7 @@ fn fmul(module: &mut Module, res_type: &'static TypeName, res_id: u32, lhs: u32,
     let res_type = module.register_type(res_type);
 
     module.instructions.push(Instruction::FMul {
-        result_type: TypeId(res_type),
+        result_type: res_type,
         result_id: ResultId(res_id),
         lhs: ValueId(lhs),
         rhs: ValueId(rhs),
@@ -34,7 +34,7 @@ fn vector_times_scalar(module: &mut Module, res_type: &'static TypeName, res_id:
     let res_type = module.register_type(res_type);
 
     module.instructions.push(Instruction::VectorTimesScalar {
-        result_type: TypeId(res_type),
+        result_type: res_type,
         result_id: ResultId(res_id),
         vector: ValueId(vector),
         scalar: ValueId(scalar),
@@ -45,7 +45,7 @@ fn matrix_times_scalar(module: &mut Module, res_type: &'static TypeName, res_id:
     let res_type = module.register_type(res_type);
 
     module.instructions.push(Instruction::MatrixTimesScalar {
-        result_type: TypeId(res_type),
+        result_type: res_type,
         result_id: ResultId(res_id),
         matrix: ValueId(matrix),
         scalar: ValueId(scalar),
@@ -105,7 +105,7 @@ pub fn multiply(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Res
             let res_type = module.register_type(l_type);
 
             module.instructions.push(Instruction::VectorTimesMatrix {
-                result_type: TypeId(res_type),
+                result_type: res_type,
                 result_id: ResultId(res_id),
                 vector: ValueId(l_value),
                 matrix: ValueId(r_value),
@@ -117,7 +117,7 @@ pub fn multiply(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Res
             let res_type = module.register_type(l_type);
 
             module.instructions.push(Instruction::MatrixTimesVector {
-                result_type: TypeId(res_type),
+                result_type: res_type,
                 result_id: ResultId(res_id),
                 matrix: ValueId(l_value),
                 vector: ValueId(r_value),
@@ -130,7 +130,7 @@ pub fn multiply(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Res
             let res_type = module.register_type(l_type);
 
             module.instructions.push(Instruction::MatrixTimesMatrix {
-                result_type: TypeId(res_type),
+                result_type: res_type,
                 result_id: ResultId(res_id),
                 lhs: ValueId(l_value),
                 rhs: ValueId(r_value),
@@ -162,7 +162,7 @@ pub fn dot(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Result<(
             let result_id = module.get_id();
 
             module.instructions.push(Instruction::Dot {
-                result_type: TypeId(res_type),
+                result_type: res_type,
                 result_id: ResultId(result_id),
                 lhs: ValueId(l_value),
                 rhs: ValueId(r_value),
@@ -196,7 +196,7 @@ macro_rules! impl_math_op {
                             let res_type = module.register_type(l_type);
 
                             module.instructions.push(Instruction::$sopcode {
-                                result_type: TypeId(res_type),
+                                result_type: res_type,
                                 result_id: ResultId(result_id),
                                 lhs: ValueId(l_value),
                                 rhs: ValueId(r_value),
@@ -208,7 +208,7 @@ macro_rules! impl_math_op {
                             let res_type = module.register_type(l_type);
 
                             module.instructions.push(Instruction::$sopcode {
-                                result_type: TypeId(res_type),
+                                result_type: res_type,
                                 result_id: ResultId(result_id),
                                 lhs: ValueId(l_value),
                                 rhs: ValueId(r_value),
@@ -221,7 +221,7 @@ macro_rules! impl_math_op {
                             let res_type = module.register_type(l_type);
 
                             module.instructions.push(Instruction::$uopcode {
-                                result_type: TypeId(res_type),
+                                result_type: res_type,
                                 result_id: ResultId(result_id),
                                 lhs: ValueId(l_value),
                                 rhs: ValueId(r_value),
@@ -233,7 +233,7 @@ macro_rules! impl_math_op {
                             let res_type = module.register_type(l_type);
 
                             module.instructions.push(Instruction::$uopcode {
-                                result_type: TypeId(res_type),
+                                result_type: res_type,
                                 result_id: ResultId(result_id),
                                 lhs: ValueId(l_value),
                                 rhs: ValueId(r_value),
@@ -246,7 +246,7 @@ macro_rules! impl_math_op {
                             let res_type = module.register_type(l_type);
 
                             module.instructions.push(Instruction::$fopcode {
-                                result_type: TypeId(res_type),
+                                result_type: res_type,
                                 result_id: ResultId(result_id),
                                 lhs: ValueId(l_value),
                                 rhs: ValueId(r_value),
@@ -258,7 +258,7 @@ macro_rules! impl_math_op {
                             let res_type = module.register_type(l_type);
 
                             module.instructions.push(Instruction::$fopcode {
-                                result_type: TypeId(res_type),
+                                result_type: res_type,
                                 result_id: ResultId(result_id),
                                 lhs: ValueId(l_value),
                                 rhs: ValueId(r_value),
@@ -276,7 +276,7 @@ macro_rules! impl_math_op {
                             let res_type = module.register_type(l_type);
 
                             module.instructions.push(Instruction::$iopcode {
-                                result_type: TypeId(res_type),
+                                result_type: res_type,
                                 result_id: ResultId(result_id),
                                 lhs: ValueId(l_value),
                                 rhs: ValueId(r_value),
@@ -288,7 +288,7 @@ macro_rules! impl_math_op {
                             let res_type = module.register_type(l_type);
 
                             module.instructions.push(Instruction::$iopcode {
-                                result_type: TypeId(res_type),
+                                result_type: res_type,
                                 result_id: ResultId(result_id),
                                 lhs: ValueId(l_value),
                                 rhs: ValueId(r_value),
@@ -301,7 +301,7 @@ macro_rules! impl_math_op {
                             let res_type = module.register_type(l_type);
 
                             module.instructions.push(Instruction::$fopcode {
-                                result_type: TypeId(res_type),
+                                result_type: res_type,
                                 result_id: ResultId(result_id),
                                 lhs: ValueId(r_value),
                                 rhs: ValueId(l_value),
@@ -313,7 +313,7 @@ macro_rules! impl_math_op {
                             let res_type = module.register_type(l_type);
 
                             module.instructions.push(Instruction::$fopcode {
-                                result_type: TypeId(res_type),
+                                result_type: res_type,
                                 result_id: ResultId(result_id),
                                 lhs: ValueId(r_value),
                                 rhs: ValueId(l_value),

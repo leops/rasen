@@ -1,5 +1,7 @@
 //! Graph building helpers
 
+use std::ops::Index;
+
 use petgraph::graph::NodeIndex;
 use petgraph::{
     Graph as PetGraph, Outgoing, Incoming, algo,
@@ -36,11 +38,6 @@ impl Graph {
         algo::is_cyclic_directed(&self.graph)
     }
 
-    /// Get a node from the graph
-    pub fn node<'a>(&'a self, index: NodeIndex<u32>) -> &'a Node {
-        &self.graph[index]
-    }
-
     /// List all the outputs of the graph
     pub fn outputs<'a>(&'a self) -> Box<Iterator<Item=NodeIndex<u32>> + 'a> {
         Box::new(
@@ -53,11 +50,22 @@ impl Graph {
     }
 
     /// List the incoming connections for a node
-    pub fn arguments(&self, index: NodeIndex<u32>) -> Vec<NodeIndex<u32>> {
+    pub fn arguments<'a>(&'a self, index: NodeIndex<u32>) -> Box<Iterator<Item=NodeIndex<u32>> + 'a> {
         let mut vec: Vec<_> = self.graph.edges_directed(index, Incoming).collect();
 
         vec.sort_by_key(|&(_, w)| w);
 
-        vec.into_iter().map(|(k, _)| k).collect()
+        Box::new(
+            vec.into_iter().map(|(k, _)| k)
+        )
+    }
+}
+
+impl Index<NodeIndex<u32>> for Graph {
+    type Output = Node;
+
+    /// Get a node from the graph
+    fn index(&self, index: NodeIndex<u32>) -> &Node {
+        &self.graph[index]
     }
 }

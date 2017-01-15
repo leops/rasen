@@ -1,6 +1,6 @@
 use spirv_utils::instruction::*;
 use spirv_utils::desc::{
-    Id, ResultId, TypeId, ValueId,
+    Id, ResultId,
 };
 
 use module::Module;
@@ -26,12 +26,12 @@ macro_rules! unary_vec {
             };
 
             let res_id = module.get_id();
-            let ext_id = module.import_set(String::from("GLSL.std.450"));
+            let ext_id = module.import_set("GLSL.std.450");
 
             module.instructions.push(Instruction::ExtInst {
-                result_type: TypeId(res_type),
+                result_type: res_type,
                 result_id: ResultId(res_id),
-                set: ValueId(ext_id),
+                set: ext_id,
                 instruction: $op as u32,
                 operands: Box::new([
                     Id(arg_val)
@@ -79,12 +79,12 @@ macro_rules! binary_any {
             let res_type = module.register_type(l_type);
             let res_id = module.get_id();
 
-            let ext_id = module.import_set(String::from("GLSL.std.450"));
+            let ext_id = module.import_set("GLSL.std.450");
 
             module.instructions.push(Instruction::ExtInst {
-                result_type: TypeId(res_type),
+                result_type: res_type,
                 result_id: ResultId(res_id),
-                set: ValueId(ext_id),
+                set: ext_id,
                 instruction: inst_id as u32,
                 operands: Box::new([
                     Id(l_value), Id(r_value)
@@ -133,12 +133,12 @@ macro_rules! trinary_any {
             let res_type = module.register_type(a_type);
             let res_id = module.get_id();
 
-            let ext_id = module.import_set(String::from("GLSL.std.450"));
+            let ext_id = module.import_set("GLSL.std.450");
 
             module.instructions.push(Instruction::ExtInst {
-                result_type: TypeId(res_type),
+                result_type: res_type,
                 result_id: ResultId(res_id),
-                set: ValueId(ext_id),
+                set: ext_id,
                 instruction: inst_id as u32,
                 operands: Box::new([
                     Id(a_value), Id(b_value), Id(c_value)
@@ -169,12 +169,12 @@ pub fn distance(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Res
             let res_type = module.register_type(l_scalar);
 
             let res_id = module.get_id();
-            let ext_id = module.import_set(String::from("GLSL.std.450"));
+            let ext_id = module.import_set("GLSL.std.450");
 
             module.instructions.push(Instruction::ExtInst {
-                result_type: TypeId(res_type),
+                result_type: res_type,
                 result_id: ResultId(res_id),
-                set: ValueId(ext_id),
+                set: ext_id,
                 instruction: Distance as u32,
                 operands: Box::new([
                     Id(l_value), Id(r_value)
@@ -205,12 +205,12 @@ pub fn reflect(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Resu
             let vec_type = module.register_type(l_type);
 
             let result_id = module.get_id();
-            let ext_id = module.import_set(String::from("GLSL.std.450"));
+            let ext_id = module.import_set("GLSL.std.450");
 
             module.instructions.push(Instruction::ExtInst {
-                result_type: TypeId(vec_type),
+                result_type: vec_type,
                 result_id: ResultId(result_id),
-                set: ValueId(ext_id),
+                set: ext_id,
                 instruction: Reflect as u32,
                 operands: Box::new([
                     Id(l_value), Id(r_value)
@@ -240,12 +240,12 @@ pub fn refract(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Resu
             let vec_type = module.register_type(l_type);
 
             let res_id = module.get_id();
-            let ext_id = module.import_set(String::from("GLSL.std.450"));
+            let ext_id = module.import_set("GLSL.std.450");
 
             module.instructions.push(Instruction::ExtInst {
-                result_type: TypeId(vec_type),
+                result_type: vec_type,
                 result_id: ResultId(res_id),
-                set: ValueId(ext_id),
+                set: ext_id,
                 instruction: Refract as u32,
                 operands: Box::new([
                     Id(l_value), Id(r_value), Id(i_value)

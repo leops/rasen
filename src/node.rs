@@ -26,7 +26,7 @@ impl Node {
                         Err(ErrorKind::WrongArgumentsCount(args.len(), $argc))?;
                     }
 
-                    let ext_id = module.import_set(String::from("GLSL.std.450"));
+                    let ext_id = module.import_set("GLSL.std.450");
 
                     let (res_ty, _) = args[0];
                     let res_type = module.register_type(res_ty);
@@ -38,9 +38,9 @@ impl Node {
                     let result_id = module.get_id();
 
                     module.instructions.push(Instruction::ExtInst {
-                        result_type: TypeId(res_type),
+                        result_type: res_type,
                         result_id: ResultId(result_id),
-                        set: ValueId(ext_id),
+                        set: ext_id,
                         instruction: $function as u32,
                         operands: args.into_boxed_slice(),
                     });
@@ -67,7 +67,7 @@ impl Node {
                 module.declarations.push(Instruction::TypePointer {
                     result_type: TypeId(ptr_type),
                     storage_class: desc::StorageClass::Output,
-                    pointee: TypeId(type_id)
+                    pointee: type_id
                 });
 
                 let var_id = module.get_id();
@@ -103,7 +103,7 @@ impl Node {
                 module.declarations.push(Instruction::TypePointer {
                     result_type: TypeId(ptr_type),
                     storage_class: desc::StorageClass::Input,
-                    pointee: TypeId(type_id)
+                    pointee: type_id
                 });
 
                 let var_id = module.get_id();
@@ -125,7 +125,7 @@ impl Node {
                 let res_id = module.get_id();
 
                 module.instructions.push(Instruction::Load {
-                    result_type: TypeId(type_id),
+                    result_type: type_id,
                     result_id: ResultId(res_id),
                     value_id: ValueId(var_id),
                     memory_access: desc::MemoryAccess::empty(),
@@ -141,7 +141,7 @@ impl Node {
                 let res_id = module.get_id();
 
                 module.instructions.push(Instruction::CompositeConstruct {
-                    result_type: TypeId(type_id),
+                    result_type: type_id,
                     result_id: ResultId(res_id),
                     fields: match output_type {
                         &TypeName::Vec(size, data_type) => {
@@ -178,14 +178,14 @@ impl Node {
                 match arg_type {
                     &TypeName::Vec(len, data_ty) => {
                         if index >= len {
-                            Err(format!("Index out of bounds ({} >= {})", index, len))?;
+                            Err(ErrorKind::IndexOutOfBound(index, len))?;
                         }
 
                         let type_id = module.register_type(data_ty);
                         let res_id = module.get_id();
 
                         module.instructions.push(Instruction::CompositeExtract {
-                            result_type: TypeId(type_id),
+                            result_type: type_id,
                             result_id: ResultId(res_id),
                             obj: ValueId(arg_value),
                             indices: Box::new([ index ]),

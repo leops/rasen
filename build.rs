@@ -46,12 +46,12 @@ fn types(out_dir: &String) {
             quote! {
                 if val {
                     #module.declarations.push(Instruction::ConstantTrue {
-                        result_type: TypeId(res_type),
+                        result_type: res_type,
                         result_id: ResultId(res_id),
                     });
                 } else {
                     #module.declarations.push(Instruction::ConstantFalse {
-                        result_type: TypeId(res_type),
+                        result_type: res_type,
                         result_id: ResultId(res_id),
                     });
                 }
@@ -62,7 +62,7 @@ fn types(out_dir: &String) {
                 unsafe {
                     let transmuted: [u32; #size] = ::std::mem::transmute(val);
                     #module.declarations.push(Instruction::Constant {
-                        result_type: TypeId(res_type),
+                        result_type: res_type,
                         result_id: ResultId(res_id),
                         val: Box::new(transmuted),
                     });
@@ -130,7 +130,7 @@ fn types(out_dir: &String) {
                     let res_id = #module.get_id();
 
                     #module.declarations.push(Instruction::ConstantComposite {
-                        result_type: TypeId(res_type),
+                        result_type: res_type,
                         result_id: ResultId(res_id),
                         flds: Box::new([ #( #field_ids ),* ]),
                     });

@@ -25,6 +25,10 @@ error_chain! {
             description("graph is cyclic")
             display("graph is cyclic")
         }
+        IndexOutOfBound(index: u32, len: u32) {
+            description("index out of bounds")
+            display("index out of bounds ({} >= {})", index, len)
+        }
     }
 }
 
