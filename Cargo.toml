@@ -1,6 +1,6 @@
 [package]
 name = "rasen"
-version = "0.6.0"
+version = "0.7.0"
 authors = ["l3ops <root@leops.me>"]
 description = "Generate SPIR-V bytecode from an operation graph"
 repository = "https://github.com/leops/rasen"
@@ -15,8 +15,5 @@ quote = "0.3"
 [dependencies]
 petgraph = "0.2.8"
 error-chain = "*"
-
-[dependencies.spirv-utils]
-version = "0.2.1"
-git = "https://github.com/leops/spirv-utils.git"
-rev = "b99f9b0"
+spirv_headers = "*"
+rspirv = "*"

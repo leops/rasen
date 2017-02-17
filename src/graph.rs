@@ -10,7 +10,7 @@ use petgraph::{
 pub use super::types::*;
 pub use super::node::*;
 
-/// Wrapper for the petgraph::Graph struct, with type inference on the edges
+/// Convenience wrapper for `petgraph::Graph`
 #[derive(Debug)]
 pub struct Graph {
     graph: PetGraph<Node, u32>,

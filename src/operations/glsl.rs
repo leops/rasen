@@ -1,9 +1,9 @@
-use spirv_utils::instruction::*;
-use spirv_utils::desc::{
-    Id, ResultId,
+use spirv_headers::*;
+use rspirv::mr::{
+    Instruction, Operand
 };
 
-use module::Module;
+use builder::Builder;
 use glsl::GLSL::*;
 use types::*;
 use errors::*;
@@ -11,7 +11,7 @@ use errors::*;
 macro_rules! unary_vec {
     ( $name:ident, $op:ident ) => {
         #[inline]
-        pub fn $name(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+        pub fn $name(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
             if args.len() != 1 {
@@ -20,23 +20,26 @@ macro_rules! unary_vec {
 
             let (arg_ty, arg_val) = args[0];
             let (res_type, scalar) = if let &Vec(_, scalar) = arg_ty {
-                (module.register_type(scalar), scalar)
+                (builder.register_type(scalar), scalar)
             } else {
                 return Err(ErrorKind::BadArguments(Box::new([ arg_ty ])).into());
             };
 
-            let res_id = module.get_id();
-            let ext_id = module.import_set("GLSL.std.450");
+            let res_id = builder.get_id();
+            let ext_id = builder.import_set("GLSL.std.450");
 
-            module.instructions.push(Instruction::ExtInst {
-                result_type: res_type,
-                result_id: ResultId(res_id),
-                set: ext_id,
-                instruction: $op as u32,
-                operands: Box::new([
-                    Id(arg_val)
-                ]),
-            });
+            builder.push_instruction(
+                Instruction::new(
+                    Op::ExtInst,
+                    Some(res_type),
+                    Some(res_id),
+                    vec![
+                        Operand::IdRef(ext_id),
+                        Operand::LiteralExtInstInteger($op as Word),
+                        Operand::IdRef(arg_val)
+                    ]
+                )
+            );
 
             Ok((scalar, res_id))
         }
@@ -51,7 +54,7 @@ unary_vec!(length, Length);
 macro_rules! binary_any {
     ( $name:ident, $op:ident, $scode:ident, $ucode:ident, $fcode:ident ) => {
         #[inline]
-        pub fn $name(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+        pub fn $name(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
             if args.len() != 2 {
@@ -76,20 +79,24 @@ macro_rules! binary_any {
                 ])))?,
             };
 
-            let res_type = module.register_type(l_type);
-            let res_id = module.get_id();
+            let res_type = builder.register_type(l_type);
+            let res_id = builder.get_id();
 
-            let ext_id = module.import_set("GLSL.std.450");
+            let ext_id = builder.import_set("GLSL.std.450");
 
-            module.instructions.push(Instruction::ExtInst {
-                result_type: res_type,
-                result_id: ResultId(res_id),
-                set: ext_id,
-                instruction: inst_id as u32,
-                operands: Box::new([
-                    Id(l_value), Id(r_value)
-                ]),
-            });
+            builder.push_instruction(
+                Instruction::new(
+                    Op::ExtInst,
+                    Some(res_type),
+                    Some(res_id),
+                    vec![
+                        Operand::IdRef(ext_id),
+                        Operand::LiteralExtInstInteger(inst_id as Word),
+                        Operand::IdRef(l_value),
+                        Operand::IdRef(r_value)
+                    ]
+                )
+            );
 
             Ok((l_type, res_id))
         }
@@ -102,7 +109,7 @@ binary_any!(max, Max, SMax, UMax, FMax);
 macro_rules! trinary_any {
     ($name:ident, $op:ident, $fcode:ident$(, $scode:ident, $ucode:ident )*) => {
         #[inline]
-        pub fn $name(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+        pub fn $name(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
             if args.len() != 3 {
@@ -130,20 +137,25 @@ macro_rules! trinary_any {
                 ])))?,
             };
 
-            let res_type = module.register_type(a_type);
-            let res_id = module.get_id();
+            let res_type = builder.register_type(a_type);
+            let res_id = builder.get_id();
 
-            let ext_id = module.import_set("GLSL.std.450");
+            let ext_id = builder.import_set("GLSL.std.450");
 
-            module.instructions.push(Instruction::ExtInst {
-                result_type: res_type,
-                result_id: ResultId(res_id),
-                set: ext_id,
-                instruction: inst_id as u32,
-                operands: Box::new([
-                    Id(a_value), Id(b_value), Id(c_value)
-                ]),
-            });
+            builder.push_instruction(
+                Instruction::new(
+                    Op::ExtInst,
+                    Some(res_type),
+                    Some(res_id),
+                    vec![
+                        Operand::IdRef(ext_id),
+                        Operand::LiteralExtInstInteger(inst_id as Word),
+                        Operand::IdRef(a_value),
+                        Operand::IdRef(b_value),
+                        Operand::IdRef(c_value)
+                    ]
+                )
+            );
 
             Ok((a_type, res_id))
         }
@@ -154,7 +166,7 @@ trinary_any!(clamp, Clamp, FClamp, SClamp, UClamp);
 trinary_any!(mix, Mix, FMix);
 
 #[inline]
-pub fn distance(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+pub fn distance(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 2 {
@@ -166,20 +178,24 @@ pub fn distance(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Res
 
     match (l_type, r_type) {
         (&Vec(l_size, l_scalar), &Vec(r_size, r_scalar)) if l_size == r_size && l_scalar == r_scalar => {
-            let res_type = module.register_type(l_scalar);
+            let res_type = builder.register_type(l_scalar);
 
-            let res_id = module.get_id();
-            let ext_id = module.import_set("GLSL.std.450");
+            let res_id = builder.get_id();
+            let ext_id = builder.import_set("GLSL.std.450");
 
-            module.instructions.push(Instruction::ExtInst {
-                result_type: res_type,
-                result_id: ResultId(res_id),
-                set: ext_id,
-                instruction: Distance as u32,
-                operands: Box::new([
-                    Id(l_value), Id(r_value)
-                ]),
-            });
+            builder.push_instruction(
+                Instruction::new(
+                    Op::ExtInst,
+                    Some(res_type),
+                    Some(res_id),
+                    vec![
+                        Operand::IdRef(ext_id),
+                        Operand::LiteralExtInstInteger(Distance as u32),
+                        Operand::IdRef(l_value),
+                        Operand::IdRef(r_value)
+                    ]
+                )
+            );
 
             Ok((l_scalar, res_id))
         },
@@ -190,7 +206,7 @@ pub fn distance(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Res
 }
 
 #[inline]
-pub fn reflect(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+pub fn reflect(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 2 {
@@ -202,20 +218,24 @@ pub fn reflect(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Resu
 
     match (l_type, r_type) {
         (&Vec(l_size, l_scalar), &Vec(r_size, r_scalar)) if l_size == r_size && l_scalar == r_scalar => {
-            let vec_type = module.register_type(l_type);
+            let vec_type = builder.register_type(l_type);
 
-            let result_id = module.get_id();
-            let ext_id = module.import_set("GLSL.std.450");
+            let result_id = builder.get_id();
+            let ext_id = builder.import_set("GLSL.std.450");
 
-            module.instructions.push(Instruction::ExtInst {
-                result_type: vec_type,
-                result_id: ResultId(result_id),
-                set: ext_id,
-                instruction: Reflect as u32,
-                operands: Box::new([
-                    Id(l_value), Id(r_value)
-                ]),
-            });
+            builder.push_instruction(
+                Instruction::new(
+                    Op::ExtInst,
+                    Some(vec_type),
+                    Some(result_id),
+                    vec![
+                        Operand::IdRef(ext_id),
+                        Operand::LiteralExtInstInteger(Reflect as u32),
+                        Operand::IdRef(l_value),
+                        Operand::IdRef(r_value)
+                    ]
+                )
+            );
 
             Ok((l_type, result_id))
         },
@@ -224,7 +244,7 @@ pub fn reflect(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Resu
 }
 
 #[inline]
-pub fn refract(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+pub fn refract(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 3 {
@@ -237,20 +257,25 @@ pub fn refract(module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Resu
 
     match (l_type, r_type) {
         (&Vec(l_size, l_scalar), &Vec(r_size, r_scalar)) if l_size == r_size && l_scalar == r_scalar && l_scalar == i_type && i_type.is_float() => {
-            let vec_type = module.register_type(l_type);
+            let vec_type = builder.register_type(l_type);
 
-            let res_id = module.get_id();
-            let ext_id = module.import_set("GLSL.std.450");
+            let res_id = builder.get_id();
+            let ext_id = builder.import_set("GLSL.std.450");
 
-            module.instructions.push(Instruction::ExtInst {
-                result_type: vec_type,
-                result_id: ResultId(res_id),
-                set: ext_id,
-                instruction: Refract as u32,
-                operands: Box::new([
-                    Id(l_value), Id(r_value), Id(i_value)
-                ]),
-            });
+            builder.push_instruction(
+                Instruction::new(
+                    Op::ExtInst,
+                    Some(vec_type),
+                    Some(res_id),
+                    vec![
+                        Operand::IdRef(ext_id),
+                        Operand::LiteralExtInstInteger(Refract as u32),
+                        Operand::IdRef(l_value),
+                        Operand::IdRef(r_value),
+                        Operand::IdRef(i_value)
+                    ]
+                )
+            );
 
             Ok((l_type, res_id))
         },

@@ -20,7 +20,7 @@ const FLOATS: [(&'static str, &'static str, &'static str); 2] = [
 ];
 
 fn types(out_dir: &String) {
-    let module = quote::Ident::from("$module");
+    let builder = quote::Ident::from("$builder");
     let constant = quote::Ident::from("$constant");
 
     let mut const_types = Vec::new();
@@ -42,38 +42,74 @@ fn types(out_dir: &String) {
             &TypedValue::#name(..) => TypeName::#const_name
         });
 
-        let register_val = if ty == "bool" {
-            quote! {
+        let register_val = match ty {
+            "bool" => quote! {
                 if val {
-                    #module.declarations.push(Instruction::ConstantTrue {
-                        result_type: res_type,
-                        result_id: ResultId(res_id),
-                    });
+                    #builder.module.types_global_values.push(
+                        Instruction::new(
+                            Op::ConstantTrue,
+                            Some(res_type),
+                            Some(res_id),
+                            Vec::new()
+                        )
+                    );
                 } else {
-                    #module.declarations.push(Instruction::ConstantFalse {
-                        result_type: res_type,
-                        result_id: ResultId(res_id),
-                    });
+                    #builder.module.types_global_values.push(
+                        Instruction::new(
+                            Op::ConstantFalse,
+                            Some(res_type),
+                            Some(res_id),
+                            Vec::new()
+                        )
+                    );
                 }
-            }
-        } else {
-            let size: usize = if ty == "f64" {2} else {1};
-            quote! {
-                unsafe {
-                    let transmuted: [u32; #size] = ::std::mem::transmute(val);
-                    #module.declarations.push(Instruction::Constant {
-                        result_type: res_type,
-                        result_id: ResultId(res_id),
-                        val: Box::new(transmuted),
-                    });
-                }
-            }
+            },
+
+            "i32" | "u32" => quote! {
+                #builder.module.types_global_values.push(
+                    Instruction::new(
+                        Op::Constant,
+                        Some(res_type),
+                        Some(res_id),
+                        vec![
+                            Operand::LiteralInt32(val as u32),
+                        ]
+                    )
+                );
+            },
+
+            "f32" => quote! {
+                #builder.module.types_global_values.push(
+                    Instruction::new(
+                        Op::Constant,
+                        Some(res_type),
+                        Some(res_id),
+                        vec![
+                            Operand::LiteralFloat32(val),
+                        ]
+                    )
+                );
+            },
+            "f64" => quote! {
+                #builder.module.types_global_values.push(
+                    Instruction::new(
+                        Op::Constant,
+                        Some(res_type),
+                        Some(res_id),
+                        vec![
+                            Operand::LiteralFloat64(val),
+                        ]
+                    )
+                );
+            },
+
+            _ => unreachable!()
         };
 
         register_constant_arms.push(quote! {
             &TypedValue::#name(val) => {
-                let res_type = #module.register_type(#constant.to_type_name());
-                let res_id = #module.get_id();
+                let res_type = #builder.register_type(#constant.to_type_name());
+                let res_id = #builder.get_id();
                 #register_val
                 Ok(res_id)
             },
@@ -118,7 +154,7 @@ fn types(out_dir: &String) {
             let register_fields: Vec<_> =
                 field_ids.iter().zip(fields.iter())
                     .map(|(id, field)| quote! {
-                        let #id = ValueId(#module.register_constant(&TypedValue::#name(#field))?);
+                        let #id = #builder.register_constant(&TypedValue::#name(#field))?;
                     })
                     .collect();
 
@@ -126,23 +162,28 @@ fn types(out_dir: &String) {
                 &TypedValue::#type_variant(#( #fields ),*) => {
                     #( #register_fields )*
 
-                    let res_type = #module.register_type(#constant.to_type_name());
-                    let res_id = #module.get_id();
+                    let res_type = #builder.register_type(#constant.to_type_name());
+                    let res_id = #builder.get_id();
 
-                    #module.declarations.push(Instruction::ConstantComposite {
-                        result_type: res_type,
-                        result_id: ResultId(res_id),
-                        flds: Box::new([ #( #field_ids ),* ]),
-                    });
+                    #builder.module.types_global_values.push(
+                        Instruction::new(
+                            Op::ConstantComposite,
+                            Some(res_type),
+                            Some(res_id),
+                            vec![
+                                #( Operand::IdRef( #field_ids ) ),*
+                            ]
+                        )
+                    );
 
                     Ok(res_id)
                 },
             });
         }
 
-        for &(name, prefix, ty) in FLOATS.iter() {
+        for &(_, prefix, ty) in FLOATS.iter() {
             let ty = quote::Ident::from(ty);
-            let const_ty = quote::Ident::from(name.to_string().to_uppercase());
+            let const_ty = quote::Ident::from(format!("{}VEC{}", prefix.to_string().to_uppercase(), size));
 
             let type_variant = format!("{}Mat{}", prefix.to_string().to_uppercase(), size);
             let const_ident = quote::Ident::from(type_variant.to_uppercase());
@@ -214,11 +255,11 @@ fn types(out_dir: &String) {
         }
     };
 
-    let path_module = Path::new(out_dir).join("module.rs");
-    let mut f_module = File::create(&path_module).unwrap();
+    let path_builder = Path::new(out_dir).join("builder.rs");
+    let mut f_builder = File::create(&path_builder).unwrap();
 
-    write!(f_module,
-        "macro_rules! impl_register_constant {{\n( $module:expr, $constant:expr ) => {{\n{}\n}};\n}}",
+    write!(f_builder,
+        "macro_rules! impl_register_constant {{\n( $builder:expr, $constant:expr ) => {{\n{}\n}};\n}}",
         register_constant
     ).unwrap();
 }
@@ -349,6 +390,11 @@ fn nodes(out_dir: &String) {
             /// Incoming values from other nodes are ignored
             Input(u32, &'static TypeName),
 
+            /// Create a uniform with a location and a type
+            ///
+            /// Incoming values from other nodes are ignored
+            Uniform(u32, &'static TypeName),
+
             /// Create an output with a location and a type
             ///
             /// Doesn't need to be an output of the graph, but all the outputs should use this type
@@ -378,6 +424,7 @@ fn nodes(out_dir: &String) {
             pub fn to_string(&self) -> &'static str {
                 match self {
                     &Node::Input(..) => "Input",
+                    &Node::Uniform(..) => "Uniform",
                     &Node::Output(..) => "Output",
                     &Node::Constant(..) => "Constant",
                     &Node::Construct(..) => "Construct",

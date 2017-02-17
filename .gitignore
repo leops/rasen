@@ -1,2 +1,8 @@
 target
 Cargo.lock
+benches/data/*.vert
+benches/data/*.frag
+benches/data/*.spv
+tests/data/*.vert
+tests/data/*.frag
+tests/data/*.spv

@@ -57,6 +57,21 @@ impl TypeName {
     pub fn is_scalar(&self) -> bool {
         self.is_bool() || self.is_num()
     }
+
+    #[inline]
+    pub fn size(&self) -> u32 {
+        match self {
+            &TypeName::Bool |
+            &TypeName::Int(_) |
+            &TypeName::Float(false) => 4,
+
+            &TypeName::Float(true) => 8,
+
+            &TypeName::Vec(len, ty) |
+            &TypeName::Mat(len, ty) => len * ty.size(),
+        }
+    }
+
 }
 
 impl fmt::Debug for TypeName {
@@ -77,9 +92,9 @@ impl fmt::Debug for TypeName {
                 _ => Err(fmt::Error),
             },
 
-            &TypeName::Mat(cols, scalar) => match scalar {
-                &TypeName::Float(false) => write!(f, "mat{}", cols),
-                &TypeName::Float(true) => write!(f, "dmat{}", cols),
+            &TypeName::Mat(rows, vec) => match vec {
+                &TypeName::Vec(cols, &TypeName::Float(false)) if rows == cols => write!(f, "mat{}", cols),
+                &TypeName::Vec(cols, &TypeName::Float(true)) if rows == cols => write!(f, "dmat{}", cols),
                 _ => Err(fmt::Error),
             },
         }

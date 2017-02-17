@@ -1,13 +1,12 @@
 //! Definition and implentations of all the graph operations
 
 use std::fmt;
-use spirv_utils::*;
-use spirv_utils::desc::{
-    Id, ResultId, TypeId, ValueId,
+use spirv_headers::*;
+use rspirv::mr::{
+    Instruction, Operand
 };
-use spirv_utils::instruction::*;
 
-use super::Module;
+use super::Builder;
 use super::types::*;
 use errors::*;
 use operations;
@@ -16,7 +15,7 @@ include!(concat!(env!("OUT_DIR"), "/node.rs"));
 
 impl Node {
     /// Insert this Node into a Program
-    pub fn get_result(&self, module: &mut Module, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+    pub fn get_result(&self, module: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
         use glsl::GLSL::*;
 
         macro_rules! impl_glsl_call {
@@ -31,19 +30,30 @@ impl Node {
                     let (res_ty, _) = args[0];
                     let res_type = module.register_type(res_ty);
 
-                    let args: ::std::vec::Vec<_> = args.into_iter()
-                        .map(|(_, rid)| Id(rid))
-                        .collect();
+                    let mut operands = Vec::with_capacity(
+                        2 + args.len()
+                    );
+                    operands.push(
+                        Operand::IdRef(ext_id)
+                    );
+                    operands.push(
+                        Operand::LiteralExtInstInteger($function as u32)
+                    );
+                    operands.extend(
+                        args.into_iter()
+                            .map(|(_, rid)| Operand::IdRef(rid))
+                    );
 
                     let result_id = module.get_id();
 
-                    module.instructions.push(Instruction::ExtInst {
-                        result_type: res_type,
-                        result_id: ResultId(result_id),
-                        set: ext_id,
-                        instruction: $function as u32,
-                        operands: args.into_boxed_slice(),
-                    });
+                    module.push_instruction(
+                        Instruction::new(
+                            Op::ExtInst,
+                            Some(res_type),
+                            Some(result_id),
+                            operands
+                        )
+                    );
 
                     Ok((res_ty, result_id))
                 }
@@ -64,33 +74,56 @@ impl Node {
                 let type_id = module.register_type(attr_type);
                 let ptr_type = module.get_id();
 
-                module.declarations.push(Instruction::TypePointer {
-                    result_type: TypeId(ptr_type),
-                    storage_class: desc::StorageClass::Output,
-                    pointee: type_id
-                });
+                module.push_declaration(
+                    Instruction::new(
+                        Op::TypePointer,
+                        None,
+                        Some(ptr_type),
+                        vec![
+                            Operand::StorageClass(StorageClass::Output),
+                            Operand::IdRef(type_id)
+                        ]
+                    )
+                );
 
                 let var_id = module.get_id();
 
-                module.outputs.push(Id(var_id));
+                module.outputs.push(var_id);
 
-                module.declarations.push(Instruction::Variable {
-                    result_type: TypeId(ptr_type),
-                    result_id: ResultId(var_id),
-                    storage_class: desc::StorageClass::Output,
-                    init: ValueId(0),
-                });
+                module.push_declaration(
+                    Instruction::new(
+                        Op::Variable,
+                        Some(ptr_type),
+                        Some(var_id),
+                        vec![
+                            Operand::StorageClass(StorageClass::Output),
+                        ]
+                    )
+                );
 
-                module.annotations.push(Instruction::Decorate {
-                    target: Id(var_id),
-                    decoration: Decoration::Location(location)
-                });
+                module.push_annotation(
+                    Instruction::new(
+                        Op::Decorate,
+                        None, None,
+                        vec![
+                            Operand::IdRef(var_id),
+                            Operand::Decoration(Decoration::Location),
+                            Operand::LiteralInt32(location),
+                        ]
+                    )
+                );
 
-                module.instructions.push(Instruction::Store {
-                    ptr: ValueId(var_id),
-                    obj: ValueId(arg_value),
-                    memory_access: desc::MemoryAccess::empty()
-                });
+                module.push_instruction(
+                    Instruction::new(
+                        Op::Store,
+                        None, None,
+                        vec![
+                            Operand::IdRef(var_id),
+                            Operand::IdRef(arg_value),
+                            Operand::MemoryAccess(MemoryAccess::empty()),
+                        ]
+                    )
+                );
 
                 Ok((attr_type, var_id))
             },
@@ -100,36 +133,93 @@ impl Node {
 
                 let ptr_type = module.get_id();
 
-                module.declarations.push(Instruction::TypePointer {
-                    result_type: TypeId(ptr_type),
-                    storage_class: desc::StorageClass::Input,
-                    pointee: type_id
-                });
+                module.push_declaration(
+                    Instruction::new(
+                        Op::TypePointer,
+                        None,
+                        Some(ptr_type),
+                        vec![
+                            Operand::StorageClass(StorageClass::Input),
+                            Operand::IdRef(type_id),
+                        ]
+                    )
+                );
 
                 let var_id = module.get_id();
 
-                module.inputs.push(Id(var_id));
+                module.inputs.push(var_id);
 
-                module.declarations.push(Instruction::Variable {
-                    result_type: TypeId(ptr_type),
-                    result_id: ResultId(var_id),
-                    storage_class: desc::StorageClass::Input,
-                    init: ValueId(0),
-                });
+                module.push_declaration(
+                    Instruction::new(
+                        Op::Variable,
+                        Some(ptr_type),
+                        Some(var_id),
+                        vec![
+                            Operand::StorageClass(StorageClass::Input),
+                        ]
+                    )
+                );
 
-                module.annotations.push(Instruction::Decorate {
-                    target: Id(var_id),
-                    decoration: Decoration::Location(location)
-                });
+                module.push_annotation(
+                    Instruction::new(
+                        Op::Decorate,
+                        None, None,
+                        vec![
+                            Operand::IdRef(var_id),
+                            Operand::Decoration(Decoration::Location),
+                            Operand::LiteralInt32(location),
+                        ]
+                    )
+                );
 
                 let res_id = module.get_id();
 
-                module.instructions.push(Instruction::Load {
-                    result_type: type_id,
-                    result_id: ResultId(res_id),
-                    value_id: ValueId(var_id),
-                    memory_access: desc::MemoryAccess::empty(),
-                });
+                module.push_instruction(
+                    Instruction::new(
+                        Op::Load,
+                        Some(type_id),
+                        Some(res_id),
+                        vec![
+                            Operand::IdRef(var_id),
+                            Operand::MemoryAccess(MemoryAccess::empty()),
+                        ]
+                    )
+                );
+
+                Ok((attr_type, res_id))
+            },
+
+            &Node::Uniform(location, attr_type) => {
+                let type_id = module.register_type(attr_type);
+
+                let ptr_type = module.get_id();
+                module.push_declaration(
+                    Instruction::new(
+                        Op::TypePointer,
+                        None,
+                        Some(ptr_type),
+                        vec![
+                            Operand::StorageClass(StorageClass::Uniform),
+                            Operand::IdRef(type_id),
+                        ]
+                    )
+                );
+
+                let var_id = module.register_uniform(location, attr_type);
+                let index_id = module.register_constant(&TypedValue::Int(location as i32))?;
+                let res_id = module.get_id();
+
+                module.push_instruction(
+                    Instruction::new(
+                        Op::AccessChain,
+                        Some(ptr_type),
+                        Some(res_id),
+                        vec![
+                            Operand::IdRef(var_id),
+                            Operand::IdRef(index_id),
+                        ]
+                    )
+                );
 
                 Ok((attr_type, res_id))
             },
@@ -140,31 +230,34 @@ impl Node {
                 let type_id = module.register_type(output_type);
                 let res_id = module.get_id();
 
-                module.instructions.push(Instruction::CompositeConstruct {
-                    result_type: type_id,
-                    result_id: ResultId(res_id),
-                    fields: match output_type {
-                        &TypeName::Vec(size, data_type) => {
-                            if args.len() != size as usize {
-                                Err(ErrorKind::WrongArgumentsCount(args.len(), size as usize))?;
-                            }
+                module.push_instruction(
+                    Instruction::new(
+                        Op::CompositeConstruct,
+                        Some(type_id),
+                        Some(res_id),
+                        match output_type {
+                            &TypeName::Vec(size, data_type) => {
+                                if args.len() != size as usize {
+                                    Err(ErrorKind::WrongArgumentsCount(args.len(), size as usize))?;
+                                }
 
-                            let res: Result<Vec<_>> =
-                                args.into_iter()
-                                    .map(|(ty, val)| {
-                                        if ty != data_type {
-                                            Err(ErrorKind::BadArguments(Box::new([ ty ])))?;
-                                        }
+                                let res: Result<Vec<_>> =
+                                    args.into_iter()
+                                        .map(|(ty, val)| {
+                                            if ty != data_type {
+                                                Err(ErrorKind::BadArguments(Box::new([ ty ])))?;
+                                            }
 
-                                        Ok(ValueId(val))
-                                    })
-                                    .collect();
+                                            Ok(Operand::IdRef(val))
+                                        })
+                                        .collect();
 
-                            res?.into_boxed_slice()
-                        },
-                        _ => Err(ErrorKind::BadArguments(Box::new([ output_type ])))?,
-                    },
-                });
+                                res?
+                            },
+                            _ => Err(ErrorKind::BadArguments(Box::new([ output_type ])))?,
+                        }
+                    )
+                );
 
                 Ok((output_type, res_id))
             },
@@ -184,12 +277,17 @@ impl Node {
                         let type_id = module.register_type(data_ty);
                         let res_id = module.get_id();
 
-                        module.instructions.push(Instruction::CompositeExtract {
-                            result_type: type_id,
-                            result_id: ResultId(res_id),
-                            obj: ValueId(arg_value),
-                            indices: Box::new([ index ]),
-                        });
+                        module.push_instruction(
+                            Instruction::new(
+                                Op::CompositeExtract,
+                                Some(type_id),
+                                Some(res_id),
+                                vec![
+                                    Operand::IdRef(arg_value),
+                                    Operand::LiteralInt32(index),
+                                ]
+                            )
+                        );
 
                         Ok((data_ty, res_id))
                     },

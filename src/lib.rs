@@ -8,47 +8,34 @@
 //! extern crate rasen;
 //!
 //! use rasen::*;
+//! use rasen::TypedValue::*;
 //!
 //! fn main() {
 //!     let graph = rasen_graph! {
-//!         nodes {
-//!             // A vec3 input at location 0
-//!             normal = Node::Input(0, TypeName::VEC3),
-//!
-//!             // Some ambient light constants
-//!             min_light = Node::Constant(TypedValue::Float(0.1)),
-//!             max_light = Node::Constant(TypedValue::Float(1.0)),
-//!             light_dir = Node::Constant(TypedValue::Vec3(0.3, -0.5, 0.2)),
-//!
-//!             // The Material color (also a constant)
-//!             mat_color = Node::Constant(TypedValue::Vec4(0.25, 0.625, 1.0, 1.0)),
-//!
-//!             // Some usual function calls
-//!             normalize = Node::Normalize,
-//!             dot = Node::Dot,
-//!             clamp = Node::Clamp,
-//!             multiply = Node::Multiply,
-//!
-//!             // And a vec4 output at location 0
-//!             color = Node::Output(0, TypeName::VEC4)
-//!         }
-//!
-//!         edges {
-//!             // Normalize the normal
-//!             normalize(normal),
-//!
-//!             // Compute the dot product of the surface normal and the light direction
-//!             dot(normalize, light_dir),
-//!
-//!             // Restrict the result into the ambient light range
-//!             clamp(dot, min_light, max_light),
-//!
+//!         // The only output of this graph is a vec4, at location 0
+//!         Output(0, TypeName::VEC4) {
 //!             // Multiply the light intensity by the surface color
-//!             multiply(clamp, mat_color),
-//!
-//!             // Write the result to the output
-//!             color(multiply)
-//!        }
+//!             Multiply {
+//!                 // Restrict the intensity into the ambient light range
+//!                 Clamp {
+//!                     // Compute the dot product of the surface normal and the light direction
+//!                     Dot {
+//!                         // Normalize the normal
+//!                         Normalize {
+//!                             // The surface normal, a vec3 input at location 0
+//!                             Input(0, TypeName::VEC3)
+//!                         }
+//!                         // The directional light direction
+//!                         Constant(Vec3(0.3, -0.5, 0.2))
+//!                     }
+//!                     // The minimum / maximum light levels
+//!                     Constant(Float(0.1))
+//!                     Constant(Float(1.0))
+//!                 }
+//!                 // The Material color
+//!                 Constant(Vec4(0.25, 0.625, 1.0, 1.0))
+//!             }
+//!         };
 //!     };
 //!
 //!     let bytecode = build_program(&graph, ShaderType::Fragment).unwrap();
@@ -56,14 +43,15 @@
 //! }
 //! ```
 //!
-//! On a lower level, you can use the `Module` struct to build your module by adding instructions
+//! On a lower level, you can use the `Builder` struct to build your module by adding instructions
 //! directly into it.
 //!
 
 #![feature(associated_consts, conservative_impl_trait)]
 
 extern crate petgraph;
-extern crate spirv_utils;
+extern crate spirv_headers;
+extern crate rspirv;
 #[macro_use]
 extern crate error_chain;
 
@@ -73,16 +61,16 @@ pub mod errors;
 
 mod types;
 mod operations;
-mod module;
+mod builder;
 mod node;
 mod macros;
 
 use errors::*;
 pub use graph::*;
-pub use module::*;
+pub use builder::*;
 
 /// Transform a node graph to SPIR-V bytecode
 pub fn build_program(graph: &Graph, mod_type: ShaderType) -> Result<Vec<u8>> {
-    let program = Module::build(graph, mod_type)?;
-    Ok(program.get_bytecode())
+    let program = Builder::build(graph, mod_type)?;
+    Ok(program.into_bytecode())
 }
