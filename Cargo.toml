@@ -23,6 +23,10 @@ exclude = [
     "tests/*",
 ]
 
+[badges]
+appveyor = { repository = "leops/rasen" }
+travis-ci = { repository = "leops/rasen" }
+
 [features]
 default = []
 

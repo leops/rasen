@@ -1,5 +1,10 @@
 rasen
 ================
+
+[![crates.io](https://img.shields.io/crates/v/rasen.svg)](https://crates.io/crates/rasen/)
+[![AppVeyor Status](https://ci.appveyor.com/api/projects/status/github/leops/rasen?svg=true)](https://ci.appveyor.com/project/leops/rasen)
+[![Travis Status](https://travis-ci.org/leops/rasen.svg?branch=master)](https://travis-ci.org/leops/rasen/)
+
 Generate SPIR-V bytecode from an operation graph (heavy WIP)
 
 ```rust

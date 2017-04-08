@@ -1,0 +1,25 @@
+# Set up the Rust toolchain.
+language: rust
+rust:
+    - nightly
+
+# Since this build doesn't require sudo, we can turn it off and improve build
+# performance.
+sudo: false
+
+# Force third-party crates to persist from previous builds and update only when
+# needed.
+cache: cargo
+
+# Install the necessary crates for building and testing the engine.
+before_script:
+    - export PATH=$PATH:/home/travis/.cargo/bin
+    - (cargo install cargo-local-pkgs || true)
+    - (cargo install rustfmt || true)
+
+# Format the codebase, generate documentation, compile the engine, run tests.
+script: |
+      # Run tests
+      cargo test --all -v &&
+      # Run benchmarks
+      cargo bench
