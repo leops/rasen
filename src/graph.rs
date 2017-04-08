@@ -3,6 +3,7 @@
 use std::ops::Index;
 
 use petgraph::graph::NodeIndex;
+use petgraph::visit::EdgeRef;
 use petgraph::{
     Graph as PetGraph, Outgoing, Incoming, algo,
 };
@@ -16,14 +17,16 @@ pub struct Graph {
     graph: PetGraph<Node, u32>,
 }
 
-impl Graph {
+impl Default for Graph {
     /// Create a new empty graph
-    pub fn new() -> Graph {
+    fn default() -> Self {
         Graph {
             graph: PetGraph::new(),
         }
     }
+}
 
+impl Graph {
     /// Add a node to the graph
     pub fn add_node(&mut self, node: Node) -> NodeIndex<u32> {
         self.graph.add_node(node)
@@ -39,6 +42,7 @@ impl Graph {
     }
 
     /// List all the outputs of the graph
+    #[cfg_attr(feature="clippy", allow(needless_lifetimes))]
     pub fn outputs<'a>(&'a self) -> Box<Iterator<Item=NodeIndex<u32>> + 'a> {
         Box::new(
             self.graph.externals(Outgoing)
@@ -50,13 +54,14 @@ impl Graph {
     }
 
     /// List the incoming connections for a node
+    #[cfg_attr(feature="clippy", allow(needless_lifetimes))]
     pub fn arguments<'a>(&'a self, index: NodeIndex<u32>) -> Box<Iterator<Item=NodeIndex<u32>> + 'a> {
         let mut vec: Vec<_> = self.graph.edges_directed(index, Incoming).collect();
 
-        vec.sort_by_key(|&(_, w)| w);
+        vec.sort_by_key(|e| e.weight());
 
         Box::new(
-            vec.into_iter().map(|(k, _)| k)
+            vec.into_iter().map(|e| e.source())
         )
     }
 }

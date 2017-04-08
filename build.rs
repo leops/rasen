@@ -39,7 +39,7 @@ fn types(out_dir: &String) {
         });
 
         type_name_arms.push(quote! {
-            &TypedValue::#name(..) => TypeName::#const_name
+            TypedValue::#name(..) => TypeName::#const_name
         });
 
         let register_val = match ty {
@@ -107,7 +107,7 @@ fn types(out_dir: &String) {
         };
 
         register_constant_arms.push(quote! {
-            &TypedValue::#name(val) => {
+            TypedValue::#name(val) => {
                 let res_type = #builder.register_type(#constant.to_type_name());
                 let res_id = #builder.get_id();
                 #register_val
@@ -145,7 +145,7 @@ fn types(out_dir: &String) {
             });
 
             type_name_arms.push(quote! {
-                &TypedValue::#type_variant(..) => TypeName::#const_name
+                TypedValue::#type_variant(..) => TypeName::#const_name
             });
 
             let fields: Vec<_> = (0..size).map(|i| quote::Ident::from(format!("f{}", i))).collect();
@@ -159,7 +159,7 @@ fn types(out_dir: &String) {
                     .collect();
 
             register_constant_arms.push(quote! {
-                &TypedValue::#type_variant(#( #fields ),*) => {
+                TypedValue::#type_variant(#( #fields ),*) => {
                     #( #register_fields )*
 
                     let res_type = #builder.register_type(#constant.to_type_name());
@@ -204,7 +204,7 @@ fn types(out_dir: &String) {
             });
 
             type_name_arms.push(quote! {
-                &TypedValue::#type_variant(..) => TypeName::#const_ident
+                TypedValue::#type_variant(..) => TypeName::#const_ident
             });
         }
     }
@@ -224,6 +224,7 @@ fn types(out_dir: &String) {
     };
 
     let typed_value = quote! {
+        /// Holder for a GLSL value and a type
         #[derive(Debug)]
         pub enum TypedValue {
             #( #typed_variants ),*
@@ -234,7 +235,7 @@ fn types(out_dir: &String) {
         impl TypedValue {
             #[inline]
             pub fn to_type_name(&self) -> &'static TypeName {
-                match self {
+                match *self {
                     #( #type_name_arms ),*
                 }
             }
@@ -249,7 +250,7 @@ fn types(out_dir: &String) {
     ).unwrap();
 
     let register_constant = quote! {
-        match #constant {
+        match *#constant {
             #( #register_constant_arms )*
             _ => Err(ErrorKind::UnsupportedConstant(#constant.to_type_name()))
         }
@@ -271,19 +272,19 @@ const NODES: [(&'static str, &'static str, &'static str); 23] = [(
 ), (
     "Add",
     "Add some values",
-    "For the moment, only 2 parameters are supported"
+    "This node takes at least 2 parameters (left-associative)"
 ), (
-    "Substract",
-    "Substract a value from another",
-    "Takes 2 parameters"
+    "Subtract",
+    "Subtract a value from another",
+    "This node takes at least 2 parameters (left-associative)"
 ), (
     "Multiply",
     "Multiply some values",
-    "For the moment, only 2 parameters are supported"
+    "This node takes at least 2 parameters (left-associative)"
 ), (
     "Divide",
     "Divide a value by another",
-    "Takes 2 parameters"
+    "This node takes at least 2 parameters (left-associative)"
 ), (
     "Modulus",
     "Compute the modulus of a value by another",
@@ -331,11 +332,11 @@ const NODES: [(&'static str, &'static str, &'static str); 23] = [(
 ), (
     "Min",
     "Returns the smallest value of all its arguments",
-    "For the moment, only 2 parameters are supported"
+    "This node takes at least 2 parameters"
 ), (
     "Max",
     "Return the greatest value of all its arguments",
-    "For the moment, only 2 parameters are supported"
+    "This node takes at least 2 parameters"
 ), (
     "Length",
     "Computes the length of a vector",
@@ -373,7 +374,7 @@ fn nodes(out_dir: &String) {
         });
 
         to_string_arms.push(quote! {
-            &Node::#ident => #name
+            Node::#ident => #name
         });
 
         from_string_arms.push(quote! {
@@ -422,18 +423,18 @@ fn nodes(out_dir: &String) {
             /// Get the name of this node
             #[inline]
             pub fn to_string(&self) -> &'static str {
-                match self {
-                    &Node::Input(..) => "Input",
-                    &Node::Uniform(..) => "Uniform",
-                    &Node::Output(..) => "Output",
-                    &Node::Constant(..) => "Constant",
-                    &Node::Construct(..) => "Construct",
-                    &Node::Extract(..) => "Extract",
+                match *self {
+                    Node::Input(..) => "Input",
+                    Node::Uniform(..) => "Uniform",
+                    Node::Output(..) => "Output",
+                    Node::Constant(..) => "Constant",
+                    Node::Construct(..) => "Construct",
+                    Node::Extract(..) => "Extract",
                     #( #to_string_arms ),*
                 }
             }
 
-            /// If possible (the node has no payload), construct a node from it's name
+            /// If possible (the node has no payload), construct a node from its name
             #[inline]
             pub fn from_string(str: &str) -> Option<Self> {
                 Some(match str {

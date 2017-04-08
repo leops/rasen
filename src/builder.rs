@@ -272,8 +272,8 @@ impl Builder {
             return *reg_id;
         }
 
-        let res_id = match type_id {
-            &TypeName::Bool => {
+        let res_id = match *type_id {
+            TypeName::Bool => {
                 let bool_id = self.get_id();
 
                 self.module.types_global_values.push(
@@ -287,7 +287,7 @@ impl Builder {
 
                 bool_id
             },
-            &TypeName::Int(is_signed) => {
+            TypeName::Int(is_signed) => {
                 let int_id = self.get_id();
 
                 self.module.types_global_values.push(
@@ -304,7 +304,7 @@ impl Builder {
 
                 int_id
             },
-            &TypeName::Float(is_double) => {
+            TypeName::Float(is_double) => {
                 let float_id = self.get_id();
 
                 self.module.types_global_values.push(
@@ -324,7 +324,7 @@ impl Builder {
 
                 float_id
             },
-            &TypeName::Vec(len, scalar) => {
+            TypeName::Vec(len, scalar) => {
                 let float_id = self.register_type(scalar);
                 let vec_id = self.get_id();
 
@@ -342,7 +342,7 @@ impl Builder {
 
                 vec_id
             },
-            &TypeName::Mat(len, vec) => {
+            TypeName::Mat(len, vec) => {
                 let vec_id = self.register_type(vec);
                 let mat_id = self.get_id();
 
@@ -368,12 +368,12 @@ impl Builder {
 
     /// Add a new constant to the module, returning its ID
     pub fn register_constant(&mut self, constant: &TypedValue) -> Result<u32> {
-        let cache = match constant {
-            &TypedValue::Bool(v) => Some(CachedConstant::Bool(v)),
-            &TypedValue::Int(v) => Some(CachedConstant::Int(v)),
-            &TypedValue::UInt(v) => Some(CachedConstant::UInt(v)),
-            &TypedValue::Float(v) => Some(CachedConstant::from_f32(v)),
-            &TypedValue::Double(v) => Some(CachedConstant::from_f64(v)),
+        let cache = match *constant {
+            TypedValue::Bool(v) => Some(CachedConstant::Bool(v)),
+            TypedValue::Int(v) => Some(CachedConstant::Int(v)),
+            TypedValue::UInt(v) => Some(CachedConstant::UInt(v)),
+            TypedValue::Float(v) => Some(CachedConstant::from_f32(v)),
+            TypedValue::Double(v) => Some(CachedConstant::from_f64(v)),
             _ => None,
         };
 
@@ -422,7 +422,7 @@ impl Builder {
                 .map(|edge| self.visit(graph, edge))
                 .collect();
 
-        let ref node = graph[index];
+        let node = &graph[index];
         let res = node.get_result(self, args?)
             .chain_err(|| ErrorKind::BuildError(node.to_string(), index.index()))?;
 
@@ -441,13 +441,13 @@ impl Builder {
 
         Module {
             header: Some(
-                ModuleHeader::new(
-                    0x07230203,
-                    0x00010000,
-                    0x000e0001,
-                    self.bound(),
-                    0,
-                )
+                ModuleHeader {
+                    magic_number: 0x07230203,
+                    version: 0x00010000,
+                    generator: 0x000e0001,
+                    bound: self.bound(),
+                    reserved_word: 0,
+                },
             ),
 
             ext_inst_imports:
@@ -487,7 +487,7 @@ impl Builder {
 
                 if let Some((ty_id, _)) = self.uniform {
                     let mut offset = 0;
-                    for &(location, _, type_id) in uniforms.iter() {
+                    for &(location, _, type_id) in &uniforms {
                         res.push(
                             Instruction::new(
                                 Op::MemberDecorate,

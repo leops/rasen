@@ -48,6 +48,8 @@
 //!
 
 #![feature(associated_consts, conservative_impl_trait)]
+#![cfg_attr(feature="clippy", feature(plugin))]
+#![cfg_attr(feature="clippy", plugin(clippy))]
 
 extern crate petgraph;
 extern crate spirv_headers;

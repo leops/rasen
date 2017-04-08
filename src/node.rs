@@ -60,8 +60,8 @@ impl Node {
             };
         }
 
-        match self {
-            &Node::Output(location, attr_type) => {
+        match *self {
+            Node::Output(location, attr_type) => {
                 if args.len() != 1 {
                     Err(ErrorKind::WrongArgumentsCount(args.len(), 1))?;
                 }
@@ -128,7 +128,7 @@ impl Node {
                 Ok((attr_type, var_id))
             },
 
-            &Node::Input(location, attr_type) => {
+            Node::Input(location, attr_type) => {
                 let type_id = module.register_type(attr_type);
 
                 let ptr_type = module.get_id();
@@ -189,7 +189,7 @@ impl Node {
                 Ok((attr_type, res_id))
             },
 
-            &Node::Uniform(location, attr_type) => {
+            Node::Uniform(location, attr_type) => {
                 let type_id = module.register_type(attr_type);
 
                 let ptr_type = module.get_id();
@@ -224,9 +224,9 @@ impl Node {
                 Ok((attr_type, res_id))
             },
 
-            &Node::Constant(ref const_type) => Ok((const_type.to_type_name(), module.register_constant(const_type)?)),
+            Node::Constant(ref const_type) => Ok((const_type.to_type_name(), module.register_constant(const_type)?)),
 
-            &Node::Construct(output_type) => {
+            Node::Construct(output_type) => {
                 let type_id = module.register_type(output_type);
                 let res_id = module.get_id();
 
@@ -235,8 +235,8 @@ impl Node {
                         Op::CompositeConstruct,
                         Some(type_id),
                         Some(res_id),
-                        match output_type {
-                            &TypeName::Vec(size, data_type) => {
+                        match *output_type {
+                            TypeName::Vec(size, data_type) => {
                                 if args.len() != size as usize {
                                     Err(ErrorKind::WrongArgumentsCount(args.len(), size as usize))?;
                                 }
@@ -262,14 +262,14 @@ impl Node {
                 Ok((output_type, res_id))
             },
 
-            &Node::Extract(index) => {
+            Node::Extract(index) => {
                 if args.len() != 1 {
                     Err(ErrorKind::WrongArgumentsCount(args.len(), 1))?;
                 }
 
                 let (arg_type, arg_value) = args[0];
-                match arg_type {
-                    &TypeName::Vec(len, data_ty) => {
+                match *arg_type {
+                    TypeName::Vec(len, data_ty) => {
                         if index >= len {
                             Err(ErrorKind::IndexOutOfBound(index, len))?;
                         }
@@ -295,35 +295,35 @@ impl Node {
                 }
             },
 
-            &Node::Add => operations::add(module, args),
-            &Node::Substract => operations::substract(module, args),
-            &Node::Multiply => operations::multiply(module, args),
-            &Node::Divide => operations::divide(module, args),
-            &Node::Modulus => operations::modulus(module, args),
-            &Node::Dot => operations::dot(module, args),
+            Node::Add => operations::add(module, args),
+            Node::Subtract => operations::subtract(module, args),
+            Node::Multiply => operations::multiply(module, &args),
+            Node::Divide => operations::divide(module, args),
+            Node::Modulus => operations::modulus(module, args),
+            Node::Dot => operations::dot(module, &args),
 
-            &Node::Clamp => operations::clamp(module, args),
-            &Node::Mix => operations::mix(module, args),
+            Node::Clamp => operations::clamp(module, args),
+            Node::Mix => operations::mix(module, args),
 
-            &Node::Normalize => impl_glsl_call!(Normalize, 1),
-            &Node::Cross => impl_glsl_call!(Cross, 2),
+            Node::Normalize => impl_glsl_call!(Normalize, 1),
+            Node::Cross => impl_glsl_call!(Cross, 2),
 
-            &Node::Pow => impl_glsl_call!(Pow, 2),
-            &Node::Floor => impl_glsl_call!(Floor, 1),
-            &Node::Ceil => impl_glsl_call!(Ceil, 1),
-            &Node::Round => impl_glsl_call!(Round, 1),
+            Node::Pow => impl_glsl_call!(Pow, 2),
+            Node::Floor => impl_glsl_call!(Floor, 1),
+            Node::Ceil => impl_glsl_call!(Ceil, 1),
+            Node::Round => impl_glsl_call!(Round, 1),
 
-            &Node::Sin => operations::sin(module, args),
-            &Node::Cos => operations::cos(module, args),
-            &Node::Tan => operations::tan(module, args),
+            Node::Sin => operations::sin(module, args),
+            Node::Cos => operations::cos(module, args),
+            Node::Tan => operations::tan(module, args),
 
-            &Node::Min => operations::min(module, args),
-            &Node::Max => operations::max(module, args),
+            Node::Min => operations::min(module, args),
+            Node::Max => operations::max(module, args),
 
-            &Node::Length => operations::length(module, args),
-            &Node::Distance => operations::distance(module, args),
-            &Node::Reflect => operations::reflect(module, args),
-            &Node::Refract => operations::refract(module, args),
+            Node::Length => operations::length(module, args),
+            Node::Distance => operations::distance(module, &args),
+            Node::Reflect => operations::reflect(module, &args),
+            Node::Refract => operations::refract(module, &args),
         }
     }
 }

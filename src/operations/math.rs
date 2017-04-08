@@ -72,15 +72,23 @@ fn matrix_times_scalar(builder: &mut Builder, res_type: &'static TypeName, res_i
 }
 
 #[inline]
-pub fn multiply(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+pub fn multiply(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
-    if args.len() != 2 {
-        Err(ErrorKind::WrongArgumentsCount(args.len(), 2))?;
-    }
+    let (l_arg, r_arg) = match args.len() {
+        2 => (
+            args[0],
+            args[1],
+        ),
+        n if n > 2 => (
+            multiply(builder, &args[0..n - 1])?,
+            args[n - 1],
+        ),
+        n => Err(ErrorKind::WrongArgumentsCount(n, 2))?,
+    };
 
-    let (l_type, l_value) = args[0];
-    let (r_type, r_value) = args[1];
+    let (l_type, l_value) = l_arg;
+    let (r_type, r_value) = r_arg;
     let res_id = builder.get_id();
 
     let res_type = match (l_type, r_type) {
@@ -172,7 +180,7 @@ pub fn multiply(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> R
 }
 
 #[inline]
-pub fn dot(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+pub fn dot(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 2 {
@@ -198,19 +206,27 @@ pub fn dot(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result
 }
 
 macro_rules! impl_math_op {
-    ( $name:ident, $node:ident, $( $opcode:ident ),* ) => {
+    ( $name:ident, $node:ident, $variadic:expr, $( $opcode:ident ),* ) => {
         #[inline]
         pub fn $name(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
-            if args.len() != 2 {
-                Err(ErrorKind::WrongArgumentsCount(args.len(), 2))?;
-            }
+            let (l_arg, r_arg) = match args.len() {
+                2 => (
+                    args[0],
+                    args[1],
+                ),
+                n if $variadic && n > 2 => (
+                    $name(builder, args[0..n - 1].to_vec())?,
+                    args[n - 1],
+                ),
+                n => Err(ErrorKind::WrongArgumentsCount(n, 2))?,
+            };
 
             let result_id = builder.get_id();
 
-            let (l_type, l_value) = args[0];
-            let (r_type, r_value) = args[1];
+            let (l_type, l_value) = l_arg;
+            let (r_type, r_value) = r_arg;
 
             macro_rules! match_types {
                 ( $uopcode:ident, $sopcode:ident, $fopcode:ident ) => {
@@ -334,7 +350,7 @@ macro_rules! impl_math_op {
     };
 }
 
-impl_math_op!(add, Add, IAdd, FAdd);
-impl_math_op!(substract, Substract, ISub, FSub);
-impl_math_op!(divide, Divide, UDiv, SDiv, FDiv);
-impl_math_op!(modulus, Modulus, UMod, SMod, FMod);
+impl_math_op!(add, Add, true, IAdd, FAdd);
+impl_math_op!(subtract, Subtract, true, ISub, FSub);
+impl_math_op!(divide, Divide, true, UDiv, SDiv, FDiv);
+impl_math_op!(modulus, Modulus, false, UMod, SMod, FMod);

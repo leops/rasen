@@ -19,7 +19,7 @@ macro_rules! unary_vec {
             }
 
             let (arg_ty, arg_val) = args[0];
-            let (res_type, scalar) = if let &Vec(_, scalar) = arg_ty {
+            let (res_type, scalar) = if let Vec(_, scalar) = *arg_ty {
                 (builder.register_type(scalar), scalar)
             } else {
                 return Err(ErrorKind::BadArguments(Box::new([ arg_ty ])).into());
@@ -51,18 +51,26 @@ unary_vec!(cos, Cos);
 unary_vec!(tan, Tan);
 unary_vec!(length, Length);
 
-macro_rules! binary_any {
+macro_rules! variadic_any {
     ( $name:ident, $op:ident, $scode:ident, $ucode:ident, $fcode:ident ) => {
         #[inline]
         pub fn $name(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
-            if args.len() != 2 {
-                Err(ErrorKind::WrongArgumentsCount(args.len(), 2))?;
-            }
+            let (l_arg, r_arg) = match args.len() {
+                2 => (
+                    args[0],
+                    args[1],
+                ),
+                n if n > 2 => (
+                    $name(builder, args[0..n - 1].to_vec())?,
+                    args[n - 1],
+                ),
+                n => Err(ErrorKind::WrongArgumentsCount(n, 2))?,
+            };
 
-            let (l_type, l_value) = args[0];
-            let (r_type, r_value) = args[1];
+            let (l_type, l_value) = l_arg;
+            let (r_type, r_value) = r_arg;
 
             let inst_id = match (l_type, r_type) {
                 _ if l_type == r_type && r_type.is_signed() => $scode,
@@ -103,8 +111,8 @@ macro_rules! binary_any {
     };
 }
 
-binary_any!(min, Min, SMin, UMin, FMin);
-binary_any!(max, Max, SMax, UMax, FMax);
+variadic_any!(min, Min, SMin, UMin, FMin);
+variadic_any!(max, Max, SMax, UMax, FMax);
 
 macro_rules! trinary_any {
     ($name:ident, $op:ident, $fcode:ident$(, $scode:ident, $ucode:ident )*) => {
@@ -166,7 +174,7 @@ trinary_any!(clamp, Clamp, FClamp, SClamp, UClamp);
 trinary_any!(mix, Mix, FMix);
 
 #[inline]
-pub fn distance(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+pub fn distance(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 2 {
@@ -206,7 +214,7 @@ pub fn distance(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> R
 }
 
 #[inline]
-pub fn reflect(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+pub fn reflect(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 2 {
@@ -244,7 +252,7 @@ pub fn reflect(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Re
 }
 
 #[inline]
-pub fn refract(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+pub fn refract(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 3 {
