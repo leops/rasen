@@ -17,9 +17,10 @@ before_script:
     - (cargo install cargo-local-pkgs || true)
     - (cargo install rustfmt || true)
 
-# Format the codebase, generate documentation, compile the engine, run tests.
+# Run tests and benchmarks.
 script: |
       # Run tests
       cargo test --all -v &&
       # Run benchmarks
-      cargo bench
+      cargo bench -p rasen &&
+      cargo bench -p rasen-dsl

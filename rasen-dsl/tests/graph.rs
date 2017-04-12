@@ -1,7 +1,8 @@
 #![feature(trace_macros)]
 
-#[macro_use]
 extern crate rasen;
+#[macro_use]
+extern crate rasen_dsl;
 
 mod data;
 use data::*;

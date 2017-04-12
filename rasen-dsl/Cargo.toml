@@ -1,0 +1,11 @@
+[package]
+name = "rasen-dsl"
+version = "0.1.0"
+authors = ["l3ops <rasen@leops.me>"]
+description = "Generate SPIR-V bytecode from a data flow graph"
+documentation = "https://docs.rs/rasen-dsl/"
+homepage = "https://github.com/leops/rasen#readme"
+repository = "https://github.com/leops/rasen"
+
+[dependencies]
+rasen = { version = "0.8.0", path = "../rasen" }

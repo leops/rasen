@@ -1,31 +1,33 @@
-/// Exposes a simple DSL for the construction of a Graph
-///
-/// ```
-/// # #[macro_use] extern crate rasen;
-/// # use rasen::*;
-/// # use rasen::TypedValue::*;
-/// # fn main() {
-/// let graph = rasen_graph! {
-///     // Keep some values around with bindings
-///     input = Input(0, TypeName::VEC3);
-///     uniform = Uniform(0, TypeName::VEC3);
-///
-///     sum = Add {
-///         uniform
-///         Constant(Vec3(1.0, 0.0, 0.5))
-///     };
-///
-///     // Write to an output
-///     Output(0, TypeName::VEC3) {
-///         Multiply {
-///             input
-///             sum
-///             Input(1, TypeName::VEC3)
-///         }
-///     };
-/// };
-/// # }
-/// ```
+//! Exposes a simple DSL for the construction of a data-flow graph for rasen
+//!
+//! ```
+//! # extern crate rasen;
+//! # #[macro_use] extern crate rasen_dsl;
+//! # use rasen::*;
+//! # use rasen::TypedValue::*;
+//! # fn main() {
+//! let graph = rasen_graph! {
+//!     // Keep some values around with bindings
+//!     input = Input(0, TypeName::VEC3);
+//!     uniform = Uniform(0, TypeName::VEC3);
+//!
+//!     sum = Add {
+//!         uniform
+//!         Constant(Vec3(1.0, 0.0, 0.5))
+//!     };
+//!
+//!     // Write to an output
+//!     Output(0, TypeName::VEC3) {
+//!         Multiply {
+//!             input
+//!             sum
+//!             Input(1, TypeName::VEC3)
+//!         }
+//!     };
+//! };
+//! # }
+//! ```
+
 #[macro_export]
 macro_rules! rasen_graph {
     // Internal resolution
@@ -86,7 +88,7 @@ macro_rules! rasen_graph {
     // Context
     ( $( $body:tt )+ ) => {
         {
-            let mut graph = $crate::graph::Graph::default();
+            let mut graph = ::rasen::graph::Graph::default();
             rasen_graph!(@top graph; $( $body )* );
             graph
         }

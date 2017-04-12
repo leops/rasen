@@ -8,8 +8,9 @@ rasen
 Generate SPIR-V bytecode from an operation graph (heavy WIP)
 
 ```rust
-#[macro_use]
 extern crate rasen;
+#[macro_use]
+extern crate rasen_dsl;
 
 use rasen::*;
 use rasen::TypedValue::*;

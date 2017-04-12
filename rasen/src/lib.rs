@@ -4,13 +4,11 @@
 //! `Node`, describing the operations needed to obtain the outputs of the shader.
 //!
 //! ```
-//! #[macro_use]
-//! extern crate rasen;
-//!
-//! use rasen::*;
-//! use rasen::TypedValue::*;
-//!
-//! fn main() {
+//! # extern crate rasen;
+//! # #[macro_use] extern crate rasen_dsl;
+//! # use rasen::*;
+//! # use rasen::TypedValue::*;
+//! # fn main() {
 //!     let graph = rasen_graph! {
 //!         // The only output of this graph is a vec4, at location 0
 //!         Output(0, TypeName::VEC4) {
@@ -40,7 +38,7 @@
 //!
 //!     let bytecode = build_program(&graph, ShaderType::Fragment).unwrap();
 //!     // bytecode is now a Vec<u8> you can pass to Vulkan to create the shader module
-//! }
+//! # }
 //! ```
 //!
 //! On a lower level, you can use the `Builder` struct to build your module by adding instructions
@@ -65,7 +63,6 @@ mod types;
 mod operations;
 mod builder;
 mod node;
-mod macros;
 
 use errors::*;
 pub use graph::*;
