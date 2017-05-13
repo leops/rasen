@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use petgraph::graph::NodeIndex;
 
-pub use spirv_headers::ExecutionModel as ShaderType;
+use spirv_headers::ExecutionModel as ShaderType;
 use spirv_headers::*;
 use rspirv::binary::Assemble;
 use rspirv::mr::{
@@ -15,6 +15,7 @@ use rspirv::mr::{
 
 use graph::*;
 use errors::*;
+use types::{TypeName, TypedValue};
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 enum CachedConstant {

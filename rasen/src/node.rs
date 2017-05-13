@@ -6,8 +6,8 @@ use rspirv::mr::{
     Instruction, Operand
 };
 
-use super::Builder;
-use super::types::*;
+use builder::Builder;
+use types::*;
 use errors::*;
 use operations;
 

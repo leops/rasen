@@ -1,62 +1,38 @@
-use rasen::*;
-use rasen::TypedValue::*;
+use rasen_dsl::prelude::*;
 
-pub fn construct_basic_vert() -> Graph {
-    rasen_graph! {
-        a_pos = Input(0, TypeName::VEC3);
-        Output(0, TypeName::VEC4) {
-            Multiply {
-                Multiply {
-                    Multiply {
-                        Uniform(0, TypeName::MAT4)
-                        Uniform(1, TypeName::MAT4)
-                    }
-                    Uniform(2, TypeName::MAT4)
-                }
-                Construct(TypeName::VEC4) {
-                    Extract(0) { a_pos }
-                    Extract(1) { a_pos }
-                    Extract(2) { a_pos }
-                    Constant(Float(1.0))
-                }
-            }
-        };
+pub fn basic_vert(a_pos: Value<Vec3>, a_normal: Value<Vec3>, a_uv: Value<Vec2>, projection: Value<Mat4>, view: Value<Mat4>, model: Value<Mat4>) -> (Value<Vec4>, Value<Vec4>, Value<Vec2>) {
+    let mvp = projection * view * model.clone();
 
-        a_normal = Input(1, TypeName::VEC3);
-        Output(1, TypeName::VEC4) {
-            Multiply {
-                Uniform(2, TypeName::MAT4)
-                Construct(TypeName::VEC4) {
-                    Extract(0) { a_normal }
-                    Extract(1) { a_normal }
-                    Extract(2) { a_normal }
-                    Constant(Float(0.0))
-                }
-            }
-        };
+    let v_pos = mvp * vec4(index(&a_pos, 0), index(&a_pos, 1), index(&a_pos, 2), 1.0f32);
+    let v_norm = model * vec4(index(&a_normal, 0), index(&a_normal, 1), index(&a_normal, 2), 1.0f32);
 
-        Output(2, TypeName::VEC2) {
-            Input(2, TypeName::VEC2)
-        };
-    }
+    (v_pos, v_norm, a_uv)
 }
 
-pub fn construct_basic_frag() -> Graph {
-    rasen_graph! {
-        Output(0, TypeName::VEC4) {
-            Multiply {
-                Clamp {
-                    Dot {
-                        Normalize {
-                            Input(0, TypeName::VEC3)
-                        }
-                        Constant(Vec3(0.3, -0.5, 0.2))
-                    }
-                    Constant(Float(0.1))
-                    Constant(Float(1.0))
-                }
-                Constant(Vec4(0.25, 0.625, 1.0, 1.0))
-            }
-        };
-    }
+pub fn construct_basic_vert() -> Shader {
+    let shader = Shader::new();
+
+    let (v_pos, v_norm, v_uv) = basic_vert(
+        shader.input(0), shader.input(1), shader.input(2),
+        shader.uniform(0), shader.uniform(1), shader.uniform(2),
+    );
+
+    shader.output(0, v_pos);
+    shader.output(1, v_norm);
+    shader.output(2, v_uv);
+
+    shader
+}
+
+pub fn construct_basic_frag() -> Shader {
+    let shader = Shader::new();
+
+    let normal: Value<Vec3> = normalize(shader.input(0));
+    let light = vec3(0.3f32, -0.5f32, 0.2f32);
+    let color = vec4(0.25f32, 0.625f32, 1.0f32, 1.0f32);
+
+    let res = clamp(dot(normal, light), 0.1f32, 1.0f32) * color;
+    shader.output(0, res);
+
+    shader
 }

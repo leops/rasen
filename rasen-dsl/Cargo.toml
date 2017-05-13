@@ -7,5 +7,9 @@ documentation = "https://docs.rs/rasen-dsl/"
 homepage = "https://github.com/leops/rasen#readme"
 repository = "https://github.com/leops/rasen"
 
+[build-dependencies]
+quote = "0.3.15"
+
 [dependencies]
 rasen = { version = "0.8.0", path = "../rasen" }
+rasen-codegen = { version = "0.1.0", path = "../rasen-codegen" }

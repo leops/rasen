@@ -2,4 +2,5 @@
 members = [
     "rasen",
     "rasen-dsl",
+    "rasen-codegen",
 ]

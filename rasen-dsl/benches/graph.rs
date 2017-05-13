@@ -1,7 +1,6 @@
 #![feature(test)]
 
 extern crate rasen;
-#[macro_use]
 extern crate rasen_dsl;
 extern crate test;
 

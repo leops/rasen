@@ -8,8 +8,7 @@ use petgraph::{
     Graph as PetGraph, Outgoing, Incoming, algo,
 };
 
-pub use super::types::*;
-pub use super::node::*;
+use super::node::*;
 
 /// Convenience wrapper for `petgraph::Graph`
 #[derive(Debug)]

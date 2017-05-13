@@ -1,7 +1,6 @@
 #![feature(test)]
 
 extern crate rasen;
-#[macro_use]
 extern crate rasen_dsl;
 extern crate test;
 
@@ -9,13 +8,13 @@ mod data;
 
 use test::Bencher;
 use data::*;
-use rasen::*;
+use rasen::prelude::*;
 
 #[bench]
 fn bench_build_basic_vert(b: &mut Bencher) {
     let graph = construct_basic_vert();
     b.iter(||
-        build_program(&graph, ShaderType::Vertex).unwrap()
+        graph.build(ShaderType::Vertex).unwrap()
     );
 }
 
@@ -23,6 +22,6 @@ fn bench_build_basic_vert(b: &mut Bencher) {
 fn bench_build_basic_frag(b: &mut Bencher) {
     let graph = construct_basic_frag();
     b.iter(||
-        build_program(&graph, ShaderType::Fragment).unwrap()
+        graph.build(ShaderType::Fragment).unwrap()
     );
 }

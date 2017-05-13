@@ -1,0 +1,11 @@
+[package]
+name = "rasen-codegen"
+version = "0.1.0"
+authors = ["l3ops <github@leops.me>"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "0.10"
+quote = "0.3"
