@@ -31,6 +31,7 @@ quote = "0.3.15"
 
 [dev-dependencies]
 rasen-dsl = { version = "0.1.0", path = "../rasen-dsl" }
+rasen-plugin = { version = "0.1.0", path = "../rasen-plugin" }
 
 [dependencies]
 petgraph = "0.4.4"

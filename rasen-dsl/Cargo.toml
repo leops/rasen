@@ -14,3 +14,6 @@ default = []
 rasen = { version = "0.8.0", path = "../rasen" }
 rasen-codegen = { version = "0.1.0", path = "../rasen-codegen" }
 clippy = { version = "0.0.133", optional = true }
+
+[dev-dependencies]
+rasen-plugin = { version = "0.1.0", path = "../rasen-plugin" }

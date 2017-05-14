@@ -1,0 +1,10 @@
+[package]
+name = "rasen-plugin"
+version = "0.1.0"
+authors = ["l3ops <github@leops.me>"]
+
+[lib]
+plugin = true
+
+[dependencies]
+quote = "0.3.15"

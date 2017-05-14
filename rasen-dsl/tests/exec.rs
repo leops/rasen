@@ -1,4 +1,5 @@
-#![feature(trace_macros)]
+#![feature(plugin, custom_attribute)]
+#![plugin(rasen_plugin)]
 
 extern crate rasen;
 extern crate rasen_dsl;

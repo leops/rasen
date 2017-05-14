@@ -3,4 +3,5 @@ members = [
     "rasen",
     "rasen-dsl",
     "rasen-codegen",
+    "rasen-plugin",
 ]
