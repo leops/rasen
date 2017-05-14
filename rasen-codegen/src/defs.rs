@@ -94,32 +94,6 @@ pub fn all_types() -> Vec<Type> {
     res
 }
 
-pub const OPERATIONS: &[(&str, u32, &[&str], &str)] = &[
-    ("Input", 0, &[], ""),
-    ("Uniform", 0, &[], ""),
-    ("Multiply", 4, &[], ""),
-    ("Index", 2, &[], ""),
-    ("Normalize", 1, &[ "S" ], "where T0: IntoValue<Output=R>, R: Vector<S>, S: Scalar"),
-    ("Dot", 2, &[ "V" ], "where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R>, R: Scalar"),
-    ("Clamp", 3, &[], "where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=R>"),
-    ("Modulus", 2, &[], "where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar"),
-    ("Cross", 2, &[ "S" ], "where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S>, S: Scalar"),
-    ("Floor", 1, &[], "where T0: IntoValue<Output=R>, R: Scalar"),
-    ("Ceil", 1, &[], "where T0: IntoValue<Output=R>, R: Scalar"),
-    ("Round", 1, &[], "where T0: IntoValue<Output=R>, R: Scalar"),
-    ("Sin", 1, &[], "where T0: IntoValue<Output=R>, R: Scalar"),
-    ("Cos", 1, &[], "where T0: IntoValue<Output=R>, R: Scalar"),
-    ("Tan", 1, &[], "where T0: IntoValue<Output=R>, R: Scalar"),
-    ("Pow", 2, &[], "where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar"),
-    ("Min", 2, &[], "where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar"),
-    ("Max", 2, &[], "where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar"),
-    ("Length", 1, &[ "V" ], "where T0: IntoValue<Output=V>, V: Vector<R>, R: Scalar"),
-    ("Distance", 2, &[ "V" ], "where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R>, R: Scalar"),
-    ("Reflect", 2, &[ "S" ], "where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S>, S: Scalar"),
-    ("Refract", 3, &[ "S" ], "where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=S>, R: Vector<S>, S: Scalar"),
-    ("Mix", 3, &[], "where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=R>")
-];
-
 #[derive(Clone)]
 pub struct Node {
     pub name: Ident,

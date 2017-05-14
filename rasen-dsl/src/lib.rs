@@ -14,11 +14,14 @@
 //! let res = clamp(dot(normal, light), 0.1f32, 1.0f32) * color;
 //! shader.output(0, res);
 //!
+//! # #[allow(unused_variables)]
 //! let bytecode = shader.build(ShaderType::Fragment).unwrap();
 //! # }
 //! ```
 
 #![feature(specialization, conservative_impl_trait, use_extern_macros)]
+#![cfg_attr(feature="clippy", feature(plugin))]
+#![cfg_attr(feature="clippy", plugin(clippy))]
 
 extern crate rasen;
 extern crate rasen_codegen;

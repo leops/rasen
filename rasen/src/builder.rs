@@ -3,7 +3,8 @@ use std::slice;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use petgraph::graph::NodeIndex;
+use petgraph::graph::{NodeIndex, Graph as PetGraph};
+use petgraph::algo::toposort;
 
 use spirv_headers::ExecutionModel as ShaderType;
 use spirv_headers::*;
@@ -55,6 +56,65 @@ impl CachedConstant {
 
         exponent -= 127 + 23;
         CachedConstant::Float(sign, exponent, mantissa)
+    }
+}
+
+/// Builds the dependency graph for a list of Instructions and perform a topological sort
+fn sort_instructions(unsorted: Vec<Instruction>) -> Result<Vec<Instruction>> {
+    let mut decl_graph = PetGraph::new();
+
+    let mut node_map = HashMap::new();
+    for inst in unsorted.iter() {
+        let index = decl_graph.add_node(inst);
+        if let Some(id) = inst.result_id {
+            node_map.insert(id, index);
+        }
+    }
+
+    for inst in unsorted.iter() {
+        if let Some(id) = inst.result_id {
+            let self_node = node_map.get(&id).unwrap();
+
+            if let Some(id) = inst.result_type {
+                let other = node_map.get(&id).unwrap();
+                decl_graph.add_edge(*other, *self_node, ());
+            }
+
+            for op in inst.operands.iter() {
+                match op {
+                    &Operand::IdRef(ref id) => {
+                        let other = node_map.get(id).unwrap();
+                        decl_graph.add_edge(*other, *self_node, ());
+                    },
+                    _ => {},
+                }
+            }
+        }
+    }
+
+    match toposort(&decl_graph, None) {
+        Err(_) => Err(ErrorKind::CyclicGraph.into()),
+        Ok(indices) => Ok(
+            indices.into_iter()
+                .map(|i| {
+                    let inst = decl_graph[i];
+                    Instruction {
+                        class: inst.class,
+                        result_type: inst.result_type,
+                        result_id: inst.result_id,
+                        operands: inst.operands.iter()
+                            .map(|op| match op {
+                                &Operand::IdRef(id) => Operand::IdRef(id),
+                                &Operand::LiteralInt32(val) => Operand::LiteralInt32(val),
+                                &Operand::LiteralFloat32(val) => Operand::LiteralFloat32(val),
+                                &Operand::StorageClass(output) => Operand::StorageClass(output),
+                                _ => panic!("unimplemented Operand::{:?}", op),
+                            })
+                            .collect(),
+                    }
+                })
+                .collect()
+        ),
     }
 }
 
@@ -188,6 +248,17 @@ impl Builder {
         }
 
         let ty_id = self.get_id();
+        self.module.annotations.push(
+            Instruction::new(
+                Op::Decorate,
+                None,
+                None,
+                vec![
+                    Operand::IdRef(ty_id),
+                    Operand::Decoration(Decoration::Block),
+                ],
+            )
+        );
 
         let ptr_id = self.get_id();
         self.module.types_global_values.push(
@@ -432,7 +503,7 @@ impl Builder {
     }
 
     /// Build the module, returning a list of instructions
-    pub fn finalize(mut self) -> Module {
+    pub fn finalize(mut self) -> Result<Module> {
         let mut uniforms: Vec<(Word, Word, &'static TypeName)> =
             self.uniforms.iter()
                 .map(|(k, &(a, b))| (*k, a, b))
@@ -440,12 +511,12 @@ impl Builder {
 
         uniforms.sort_by_key(|&(k, _, _)| k);
 
-        Module {
+        Ok(Module {
             header: Some(
                 ModuleHeader {
-                    magic_number: 0x07230203,
-                    version: 0x00010000,
-                    generator: 0x000e0001,
+                    magic_number: MAGIC_NUMBER,
+                    version: (MAJOR_VERSION << 16) | (MAJOR_VERSION << 8),
+                    generator: 0x00100008,
                     bound: self.bound(),
                     reserved_word: 0,
                 },
@@ -530,10 +601,7 @@ impl Builder {
 
                 // Declarations
                 declarations.append(&mut self.module.types_global_values);
-
-                declarations.sort_by_key(|op| op.result_id);
-
-                declarations
+                sort_instructions(declarations)?
             },
 
             // Functions
@@ -586,18 +654,18 @@ impl Builder {
             ],
 
             .. self.module
-        }
+        })
     }
 
     /// Get the instructions of the module in binary form
-    pub fn into_bytecode(self) -> Vec<u8> {
-        let res = self.finalize().assemble();
+    pub fn into_bytecode(self) -> Result<Vec<u8>> {
+        let res = self.finalize()?.assemble();
         let res = res.as_slice();
-        Vec::from(unsafe {
+        Ok(Vec::from(unsafe {
             slice::from_raw_parts(
                 mem::transmute(res.as_ptr()),
                 res.len() * 4
             )
-        })
+        }))
     }
 }

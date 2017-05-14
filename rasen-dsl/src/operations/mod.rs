@@ -11,11 +11,13 @@ pub use self::mul::*;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::marker::PhantomData;
+use std::iter::Sum;
+use std::ops::{Mul, Div, Index};
 
 pub type GraphRef = Rc<RefCell<Graph>>;
 
 /// Value trait
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Value<T> {
     Concrete(T),
     Abstract {
@@ -79,6 +81,22 @@ impl<'a, T> IntoValue for &'a Value<T> where T: IntoValue + Clone {
             Value::Concrete(ref v) => v.get_index(graph),
             Value::Abstract { index, .. } => index,
         }
+    }
+}
+
+/// Generic sqrt operation
+pub trait Sqrt {
+    fn sqrt(val: Self) -> Self;
+}
+
+impl Sqrt for f32 {
+    fn sqrt(val: Self) -> Self {
+        val.sqrt()
+    }
+}
+impl Sqrt for f64 {
+    fn sqrt(val: Self) -> Self {
+        val.sqrt()
     }
 }
 

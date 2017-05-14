@@ -207,16 +207,29 @@ impl Node {
 
                 let var_id = module.register_uniform(location, attr_type);
                 let index_id = module.register_constant(&TypedValue::Int(location as i32))?;
-                let res_id = module.get_id();
 
+                let chain_id = module.get_id();
                 module.push_instruction(
                     Instruction::new(
                         Op::AccessChain,
                         Some(ptr_type),
-                        Some(res_id),
+                        Some(chain_id),
                         vec![
                             Operand::IdRef(var_id),
                             Operand::IdRef(index_id),
+                        ]
+                    )
+                );
+
+                let res_id = module.get_id();
+                module.push_instruction(
+                    Instruction::new(
+                        Op::Load,
+                        Some(type_id),
+                        Some(res_id),
+                        vec![
+                            Operand::IdRef(chain_id),
+                            Operand::MemoryAccess(MemoryAccess::empty()),
                         ]
                     )
                 );

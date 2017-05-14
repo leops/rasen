@@ -1,5 +1,7 @@
 #![recursion_limit = "256"]
 #![feature(proc_macro, inclusive_range_syntax, box_syntax)]
+#![cfg_attr(feature="clippy", feature(plugin))]
+#![cfg_attr(feature="clippy", plugin(clippy))]
 
 extern crate proc_macro;
 extern crate syn;

@@ -9,6 +9,15 @@ pub fn basic_vert(a_pos: Value<Vec3>, a_normal: Value<Vec3>, a_uv: Value<Vec2>, 
     (v_pos, v_norm, a_uv)
 }
 
+pub fn basic_frag(input: Value<Vec3>) -> Value<Vec4> {
+    let normal = normalize(input);
+    let light = vec3(0.3f32, -0.5f32, 0.2f32);
+    let color = vec4(0.25f32, 0.625f32, 1.0f32, 1.0f32);
+
+    clamp(dot(normal, light), 0.1f32, 1.0f32) * color
+}
+
+#[allow(dead_code)]
 pub fn construct_basic_vert() -> Shader {
     let shader = Shader::new();
 
@@ -24,15 +33,9 @@ pub fn construct_basic_vert() -> Shader {
     shader
 }
 
+#[allow(dead_code)]
 pub fn construct_basic_frag() -> Shader {
     let shader = Shader::new();
-
-    let normal: Value<Vec3> = normalize(shader.input(0));
-    let light = vec3(0.3f32, -0.5f32, 0.2f32);
-    let color = vec4(0.25f32, 0.625f32, 1.0f32, 1.0f32);
-
-    let res = clamp(dot(normal, light), 0.1f32, 1.0f32) * color;
-    shader.output(0, res);
-
+    shader.output(0, basic_frag(shader.input(0)));
     shader
 }

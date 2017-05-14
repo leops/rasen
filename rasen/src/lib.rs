@@ -7,10 +7,10 @@
 //! # extern crate rasen;
 //! # use rasen::prelude::*;
 //! # fn main() {
-//!     let mut graph = Graph::new();
+//!     let mut graph = Graph::default();
 //!
 //!     // A vec3 input at location 0
-//!     let normal = graph.add_node(Node::Input(0, TypeName::Vec(3)));
+//!     let normal = graph.add_node(Node::Input(0, TypeName::VEC3));
 //!
 //!     // Some ambient light constants
 //!     let min_light = graph.add_node(Node::Constant(TypedValue::Float(0.1)));
@@ -27,7 +27,7 @@
 //!     let multiply = graph.add_node(Node::Multiply);
 //!
 //!     // And a vec4 output at location 0
-//!     let color = graph.add_node(Node::Output(0, TypeName::Vec(4)));
+//!     let color = graph.add_node(Node::Output(0, TypeName::VEC4));
 //!
 //!     // Normalize the normal
 //!     graph.add_edge(normal, normalize, 0);
@@ -48,7 +48,7 @@
 //!     // Write the result to the output
 //!     graph.add_edge(multiply, color, 0);
 //!
-//! #   #[allow(unused)]
+//! #   #[allow(unused_variables)]
 //!     let bytecode = build_program(&graph, ShaderType::Fragment).unwrap();
 //!     // bytecode is now a Vec<u8> you can pass to Vulkan to create the shader module
 //! # }
