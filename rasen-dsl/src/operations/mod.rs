@@ -1,3 +1,5 @@
+//! Exposes Rust counterparts of common GLSL functions
+
 use rasen::prelude::{Node, Graph, NodeIndex};
 
 use types::*;
@@ -11,15 +13,16 @@ pub use self::mul::*;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::iter::Sum;
-use std::ops::{Mul, Div, Index};
+use std::ops::{Add, Sub, Mul};
 
 pub type GraphRef = Rc<RefCell<Graph>>;
 
-/// Value trait
+/// Representation of a shader value
 #[derive(Clone, Debug)]
 pub enum Value<T> {
+    /// Value backed by actual data
     Concrete(T),
+    /// Reference to a node in the graph
     Abstract {
         graph: GraphRef,
         index: NodeIndex<u32>,
@@ -27,10 +30,14 @@ pub enum Value<T> {
     },
 }
 
+/// Trait implemented by any type the DSL considers the be a "value" (including the Value enum itself)
 pub trait IntoValue {
     type Output;
-    fn get_graph(&self) -> Option<GraphRef>;
-    fn get_concrete(&self) -> Option<Self::Output>;
+    /// Gets a graph reference from this value, if it holds one
+    fn get_graph(&self) -> Option<GraphRef> { None }
+    /// Gets the concrete value of this value, if it is indeed concrete
+    fn get_concrete(&self) -> Option<Self::Output> { None }
+    /// Registers this value into a Graph and returns the node index
     fn get_index(&self, graph: GraphRef) -> NodeIndex<u32>;
 }
 
@@ -81,22 +88,6 @@ impl<'a, T> IntoValue for &'a Value<T> where T: IntoValue + Clone {
             Value::Concrete(ref v) => v.get_index(graph),
             Value::Abstract { index, .. } => index,
         }
-    }
-}
-
-/// Generic sqrt operation
-pub trait Sqrt {
-    fn sqrt(val: Self) -> Self;
-}
-
-impl Sqrt for f32 {
-    fn sqrt(val: Self) -> Self {
-        val.sqrt()
-    }
-}
-impl Sqrt for f64 {
-    fn sqrt(val: Self) -> Self {
-        val.sqrt()
     }
 }
 

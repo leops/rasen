@@ -1,9 +1,11 @@
+//! Shader builder utility
+
 use rasen::prelude::{ShaderType, build_program};
 use rasen::errors;
 
 use operations::{GraphRef, Value};
 
-/// Shader builder
+/// The Shader builder, a lightweight wrapper around a shared mutable Graph
 pub struct Shader {
     pub graph: GraphRef,
 }

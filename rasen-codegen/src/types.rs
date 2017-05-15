@@ -1,18 +1,22 @@
-use quote::{Ident, Tokens};
-use defs::{
-    Category, Type,
-    all_types,
-};
+//! GLSL Types declarations
 
-fn trait_scalar(name: Ident) -> Tokens {
+use quote::{Ident, Tokens};
+use defs::{Category, Type, all_types};
+
+fn trait_scalar(name: Ident, (zero, one): (Ident, Ident)) -> Tokens {
     quote! {
-        impl Scalar for #name {}
+        impl Scalar for #name {
+            fn zero() -> Self { #zero }
+            fn one() -> Self { #one }
+        }
     }
 }
 
-fn trait_numerical(name: Ident) -> Tokens {
+fn trait_numerical(name: Ident, pow_fn: Ident, pow_ty: Ident) -> Tokens {
     quote! {
-        impl Numerical for #name {}
+        impl Numerical for #name {
+            fn pow(x: Self, y: Self) -> Self { x.#pow_fn(y as #pow_ty) }
+        }
     }
 }
 
@@ -29,35 +33,69 @@ fn trait_integer(name: Ident, is_signed: bool) -> Tokens {
 fn trait_float(name: Ident, is_double: bool) -> Tokens {
     quote! {
         impl Floating for #name {
-            fn is_double(&self) -> bool {
-                return #is_double;
-            }
+            fn is_double(&self) -> bool { #is_double }
+            fn sqrt(self) -> Self { self.sqrt() }
+            fn floor(self) -> Self { self.floor() }
+            fn ceil(self) -> Self { self.ceil() }
+            fn round(self) -> Self { self.round() }
+            fn sin(self) -> Self { self.sin() }
+            fn cos(self) -> Self { self.cos() }
+            fn tan(self) -> Self { self.tan() }
         }
     }
 }
 
-fn trait_vector(name: Ident, component_count: u32, component_type: Ident) -> Tokens {
+fn trait_vector(name: Ident, component_count: u32, component_type: Ident, (zero, one): (Ident, Ident)) -> Tokens {
+    let fields_zero: Vec<_> = (0..component_count).map(|_| zero.clone()).collect();
+    let fields_one: Vec<_> = (0..component_count).map(|_| one.clone()).collect();
     quote! {
         impl Vector<#component_type> for #name {
-            fn component_count(&self) -> u32 {
-                #component_count
-            }
+            fn zero() -> Self { #name( #( #fields_zero ),* ) }
+            fn one() -> Self { #name( #( #fields_one ),* ) }
+            fn component_count(&self) -> u32 { #component_count }
         }
     }
 }
 
-fn trait_matrix(name: Ident, column_count: u32, column_type: Ident, scalar_type: Ident) -> Tokens {
+fn trait_matrix(name: Ident, column_count: u32, column_type: Ident, scalar_type: Ident, (zero, one): (Ident, Ident)) -> Tokens {
+    let identity: Vec<_> = {
+        (0..column_count)
+            .flat_map(|x| {
+                (0..column_count)
+                    .map(|y| if x == y { one.clone() } else { zero.clone() })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    };
+
     quote! {
         impl Matrix<#column_type, #scalar_type> for #name {
-            fn column_count(&self) -> u32 {
-                #column_count
-            }
+            fn identity() -> Self { #name( #identity ) }
+            fn column_count(&self) -> u32 { #column_count }
         }
+    }
+}
+
+fn type_values(ty: &str) -> (Ident, Ident) {
+    match ty {
+        "bool" => {
+            (Ident::from("false"), Ident::from("true"))
+        },
+
+        "i32" | "u32" => {
+            (Ident::from("0"), Ident::from("1"))
+        },
+
+        "f32" | "f64" => {
+            (Ident::from("0.0"), Ident::from("1.0"))
+        },
+
+        _ => unreachable!(),
     }
 }
 
 pub fn type_structs() -> Vec<Tokens> {
-    let res: Vec<_> = all_types().iter()
+    all_types().iter()
         .filter_map(|ty| {
             let Type { name, category, ty, component, size, .. } = ty.clone();
             let decl = match category {
@@ -66,18 +104,18 @@ pub fn type_structs() -> Vec<Tokens> {
 
                     match ty {
                         "bool" => {
-                            traits.push(trait_scalar(name.clone()));
+                            traits.push(trait_scalar(name.clone(), type_values(ty)));
                         },
 
                         "i32" | "u32" => {
-                            traits.push(trait_scalar(name.clone()));
-                            traits.push(trait_numerical(name.clone()));
+                            traits.push(trait_scalar(name.clone(), type_values(ty)));
+                            traits.push(trait_numerical(name.clone(), Ident::from("pow"), Ident::from("u32")));
                             traits.push(trait_integer(name.clone(), ty == "i32"));
                         },
 
                         "f32" | "f64" => {
-                            traits.push(trait_scalar(name.clone()));
-                            traits.push(trait_numerical(name.clone()));
+                            traits.push(trait_scalar(name.clone(), type_values(ty)));
+                            traits.push(trait_numerical(name.clone(), Ident::from("powf"), Ident::from(ty)));
                             traits.push(trait_float(name.clone(), ty == "f64"));
                         },
 
@@ -86,50 +124,22 @@ pub fn type_structs() -> Vec<Tokens> {
 
                     let ty = Ident::from(ty);
                     quote! {
-                        #[derive(Copy, Clone, PartialEq, PartialOrd)]
-                        pub struct #name(pub #ty);
+                        pub type #name = #ty;
                         #( #traits )*
-
-                        impl Into<Value<#name>> for #ty {
-                            fn into(self) -> Value<#name> {
-                                Value::Concrete(#name(self))
-                            }
-                        }
-                        impl<'a> Into<Value<#name>> for &'a #ty {
-                            fn into(self) -> Value<#name> {
-                                Value::Concrete(#name(*self))
-                            }
-                        }
-
-                        impl IntoValue for #ty {
-                            type Output = #name;
-
-                            fn get_graph(&self) -> Option<GraphRef> {
-                                None
-                            }
-
-                            fn get_concrete(&self) -> Option<Self::Output> {
-                                Some(#name(*self))
-                            }
-
-                            fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
-                                let mut graph = graph.borrow_mut();
-                                graph.add_node(Node::Constant(TypedValue::#name(*self)))
-                            }
-                        }
 
                         impl Into<Value<#name>> for #name {
                             fn into(self) -> Value<#name> {
                                 Value::Concrete(self)
                             }
                         }
+                        impl<'a> Into<Value<#name>> for &'a #name {
+                            fn into(self) -> Value<#name> {
+                                Value::Concrete(*self)
+                            }
+                        }
 
                         impl IntoValue for #name {
                             type Output = #name;
-
-                            fn get_graph(&self) -> Option<GraphRef> {
-                                None
-                            }
 
                             fn get_concrete(&self) -> Option<Self::Output> {
                                 Some(*self)
@@ -137,7 +147,7 @@ pub fn type_structs() -> Vec<Tokens> {
 
                             fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
                                 let mut graph = graph.borrow_mut();
-                                graph.add_node(Node::Constant(TypedValue::#name(self.0)))
+                                graph.add_node(Node::Constant(TypedValue::#name(*self)))
                             }
                         }
                     }
@@ -148,7 +158,7 @@ pub fn type_structs() -> Vec<Tokens> {
                     let size = size.unwrap();
 
                     let traits = vec![
-                        trait_vector(name.clone(), size, component.name.clone())
+                        trait_vector(name.clone(), size, component.name.clone(), type_values(ty))
                     ];
 
                     let ty = Ident::from(ty);
@@ -180,6 +190,7 @@ pub fn type_structs() -> Vec<Tokens> {
                     let args1: Vec<_> = generics.iter().map(|gen| Ident::from(gen.as_ref().to_lowercase())).collect();
                     let args2 = args1.clone();
                     let args3 = args1.clone();
+                    let args4 = args1.clone();
                     let sources1: Vec<_> = args1.iter().map(|ident| Ident::from(format!("{}_src", ident))).collect();
                     let sources2 = sources1.clone();
                     let arg_list: Vec<_> = generics.iter()
@@ -201,7 +212,7 @@ pub fn type_structs() -> Vec<Tokens> {
                         .unwrap();
 
                     quote! {
-                        #[derive(Copy, Clone)]
+                        #[derive(Copy, Clone, Debug)]
                         pub struct #name( #( pub #types ),* );
                         #( #traits )*
 
@@ -230,10 +241,6 @@ pub fn type_structs() -> Vec<Tokens> {
                         impl IntoValue for #name {
                             type Output = #name;
 
-                            fn get_graph(&self) -> Option<GraphRef> {
-                                None
-                            }
-
                             fn get_concrete(&self) -> Option<Self::Output> {
                                 Some(*self)
                             }
@@ -246,13 +253,13 @@ pub fn type_structs() -> Vec<Tokens> {
 
                         #[inline]
                         pub fn #lower< #( #generics ),* >( #( #arg_list ),* ) -> Value<#name> where #( #constraints ),* {
-                            if #( #args1.get_concrete().is_some() )&&* {
-                                return Value::Concrete(#name( #( #args2.get_concrete().unwrap().0 ),* ));
+                            if let ( #( Some(#args1) ),* ) = ( #( #args2.get_concrete() ),* ) {
+                                return Value::Concrete(#name( #( #args3 ),* ));
                             }
 
                             let graph_opt = #graph_opt;
                             if let Some(graph_ref) = graph_opt {
-                                #( let #sources1 = #args3.get_index(graph_ref.clone()); )*
+                                #( let #sources1 = #args4.get_index(graph_ref.clone()); )*
 
                                 let index = {
                                     let mut graph = graph_ref.borrow_mut();
@@ -279,13 +286,13 @@ pub fn type_structs() -> Vec<Tokens> {
                     let size = size.unwrap();
 
                     let traits = vec![
-                        trait_matrix(name.clone(), size, vector.name.clone(), scalar.name.clone())
+                        trait_matrix(name.clone(), size, vector.name.clone(), scalar.name.clone(), type_values(ty))
                     ];
 
                     let ty = Ident::from(ty);
                     let mat_size = (size * size) as usize;
                     quote! {
-                        #[derive(Copy, Clone)]
+                        #[derive(Copy, Clone, Debug)]
                         pub struct #name(pub [ #ty ; #mat_size ]);
                         #( #traits )*
 
@@ -304,10 +311,6 @@ pub fn type_structs() -> Vec<Tokens> {
                         impl IntoValue for #name {
                             type Output = #name;
 
-                            fn get_graph(&self) -> Option<GraphRef> {
-                                None
-                            }
-
                             fn get_concrete(&self) -> Option<Self::Output> {
                                 Some(*self)
                             }
@@ -319,8 +322,6 @@ pub fn type_structs() -> Vec<Tokens> {
                         }
                     }
                 },
-
-                _ => return None,
             };
 
             let upper = Ident::from(
@@ -374,11 +375,5 @@ pub fn type_structs() -> Vec<Tokens> {
                 }
             })
         })
-        .collect();
-
-    /*for tokens in res.iter() {
-        println!("{}", tokens);
-    }*/
-
-    res
+        .collect()
 }

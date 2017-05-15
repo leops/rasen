@@ -1,6 +1,7 @@
+//! Type metadata providers
+
 use quote::Ident;
 
-// Metadata
 const INTS: [(&'static str, &'static str, &'static str); 3] = [
     ("Bool", "b", "bool"),
     ("Int", "i", "i32"),
@@ -13,7 +14,6 @@ const FLOATS: [(&'static str, &'static str, &'static str); 2] = [
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum Category {
-    CONCRETE,
     SCALAR,
     VECTOR,
     MATRIX,
@@ -28,21 +28,11 @@ pub struct Type {
     pub ty: &'static str,
 }
 
-fn concrete_type(name: &'static str) -> Type {
-    Type {
-        name: Ident::from(name),
-        category: Category::CONCRETE,
-        component: None,
-        size: None,
-        ty: name,
-    }
-}
-
 fn scalar_type(name: &str, ty: &'static str) -> Type {
     Type {
         name: Ident::from(name),
         category: Category::SCALAR,
-        component: Some(box concrete_type(ty)),
+        component: None,
         size: None,
         ty: ty,
     }
@@ -72,7 +62,6 @@ pub fn all_types() -> Vec<Type> {
     let mut res = Vec::new();
 
     for &(res_name, _, ty) in INTS.iter().chain(FLOATS.iter()) {
-        res.push(concrete_type(ty));
         res.push(scalar_type(res_name, ty));
     }
 
@@ -111,22 +100,14 @@ pub fn all_nodes() -> Vec<Node> {
             result: result.clone(),
         });
 
-        if result.category != Category::CONCRETE {
-            res.push(Node {
-                name: Ident::from("Value"),
-                args: Some(vec![
-                    result.clone(),
-                ]),
-                result: result.clone(),
-            });
-        }
+        res.push(Node {
+            name: Ident::from("Value"),
+            args: Some(vec![
+                result.clone(),
+            ]),
+            result: result.clone(),
+        });
     }
 
     res
-}
-
-pub fn single_node(name: &str) -> Vec<Node> {
-    all_nodes().into_iter()
-        .filter(|node| node.name == name)
-        .collect()
 }

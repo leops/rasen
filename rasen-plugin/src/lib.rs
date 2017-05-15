@@ -1,3 +1,23 @@
+//! Compiler plugin to automatically wrap a function in a shader object
+//!
+//! ```
+//! #![feature(plugin, custom_attribute)]
+//! #![plugin(rasen_plugin)]
+//!
+//! extern crate rasen;
+//! extern crate rasen_dsl;
+//! use rasen_dsl::prelude::*;
+//!
+//! #[shader] // This will create the function basic_frag_shader() -> Shader
+//! fn basic_frag(a_normal: Value<Vec3>) -> Value<Vec4> {
+//!     let normal = normalize(a_normal);
+//!     let light = Vec3(0.3, -0.5, 0.2);
+//!     let color = Vec4(0.25, 0.625, 1.0, 1.0);
+//!
+//!     clamp(dot(normal, light), 0.1f32, 1.0f32) * color
+//! }
+//! ```
+
 #![feature(plugin_registrar, rustc_private, custom_attribute)]
 
 extern crate rustc_plugin;

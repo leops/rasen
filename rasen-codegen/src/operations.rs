@@ -1,3 +1,5 @@
+//! GLSL Operation declarations
+
 use quote::{Ident, Tokens};
 
 fn operation(name: &str, args: u32, adnl_generics: &[Ident], constraints: &Tokens, implementation: &Tokens) -> Tokens {
@@ -9,20 +11,19 @@ fn operation(name: &str, args: u32, adnl_generics: &[Ident], constraints: &Token
             .map(|i| Ident::from(format!("T{}", i)))
             .collect()
     };
-    let args1: Vec<Ident> = {
+    let args: Vec<Ident> = {
         indices.iter()
             .map(|i| Ident::from(format!("arg_{}", i)))
             .collect()
     };
-    let args2 = args1.clone();
     let arg_list: Vec<_> = {
-        args1.iter()
+        args.iter()
             .zip(generics.iter())
             .map(|(arg, ty)| quote! { #arg: #ty })
             .collect()
     };
     let srcs1: Vec<_> = {
-        args1.iter()
+        args.iter()
             .map(|arg| Ident::from(format!("{}_src", arg)))
             .collect()
     };
@@ -33,7 +34,7 @@ fn operation(name: &str, args: u32, adnl_generics: &[Ident], constraints: &Token
     }
 
     let graph_opt = {
-        args1.iter()
+        args.iter()
             .map(|arg| quote! { #arg.get_graph() })
             .fold(None, |root, item| match root {
                 Some(tokens) => Some(quote! { #tokens.or(#item) }),
@@ -41,15 +42,24 @@ fn operation(name: &str, args: u32, adnl_generics: &[Ident], constraints: &Token
             })
     };
 
+    let destruct_args = if args.len() > 1 {
+        let args2 = args.clone();
+        let args3 = args.clone();
+        quote! { let ( #( Some(#args2) ),* ) = ( #( #args3.get_concrete() ),* ) }
+    } else {
+        quote! { let Some(arg_0) = arg_0.get_concrete() }
+    };
+
     quote! {
+        #[allow(unused_variables)]
         pub fn #fn_name< #( #generics , )* R >( #( #arg_list ),* ) -> Value<R> #constraints {
-            if #( #args1.get_concrete().is_some() )&&* {
+            if #destruct_args {
                 #implementation
             }
 
             let graph_opt = #graph_opt;
             if let Some(graph_ref) = graph_opt {
-                #( let #srcs1 = #args2.get_index(graph_ref.clone()); )*
+                #( let #srcs1 = #args.get_index(graph_ref.clone()); )*
 
                 let index = {
                     let mut graph = graph_ref.borrow_mut();
@@ -73,119 +83,155 @@ fn operation(name: &str, args: u32, adnl_generics: &[Ident], constraints: &Token
 pub fn impl_operations() -> Vec<Tokens> {
     let operations: &[(&str, u32, &[Ident], Tokens, Tokens)] = &[
         (
-            "Normalize", 1, &[ Ident::from("S"), Ident::from("C") ],
-            quote! { where T0: IntoValue<Output=R>, R: Vector<S> + Index<u32, Output=C> + From<Vec<C>> + Into<Value<R>>, S: Scalar, C: Copy + Mul<C, Output=C> + Sum + Sqrt + Div<Output=C> },
+            "Normalize", 1, &[ Ident::from("S") ],
+            quote! { where T0: IntoValue<Output=R>, R: Vector<S>, S: Floating },
             quote! {
-                let val = arg_0.get_concrete().unwrap();
-                let count = val.component_count();
-                let length: C = Sqrt::sqrt(
-                    (0..count)
-                        .map(|i| val[i] * val[i])
-                        .sum()
-                );
-
-                let arr: Vec<_> = (0..count).map(|i| val[i] / length).collect();
+                let count = arg_0.component_count();
+                let length = length(arg_0).get_concrete().unwrap();
+                let arr: Vec<_> = (0..count).map(|i| arg_0[i] / length).collect();
                 let vec: R = arr.into();
                 return vec.into();
             }
         ), (
-            "Dot", 2, &[ Ident::from("V"), Ident::from("C") ],
-            quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R> + Index<u32, Output=C>, R: Scalar, C: Mul<C, Output=C> + Sum + Copy + Into<Value<R>> },
+            "Dot", 2, &[ Ident::from("V") ],
+            quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R>, R: Numerical },
             quote! {
-                let lhs = arg_0.get_concrete().unwrap();
-                let rhs = arg_1.get_concrete().unwrap();
-                let count = lhs.component_count();
-                let val: C = (0..count).map(|i| lhs[i] * rhs[i]).sum();
+                let count = arg_0.component_count();
+                let val: R = (0..count).map(|i| arg_0[i] * arg_1[i]).sum();
                 return val.into();
             }
         ), (
             "Clamp", 3, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=R>, R: IntoValue<Output=R> + Into<Value<R>> + Scalar },
+            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=R>, R: Scalar },
             quote! {
-                return min(max(arg_0, arg_1), arg_2);
+                let x: Value<R> = arg_0.into();
+                let min_val: Value<R> = arg_1.into();
+                let max_val: Value<R> = arg_2.into();
+                return min(max(x, min_val), max_val);
             }
         ), (
             "Modulus", 2, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar },
-            quote! { panic!("unimplemented Modulus"); }
+            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Numerical },
+            quote! {
+                return (arg_0 % arg_1).into();
+            }
         ), (
             "Cross", 2, &[ Ident::from("S") ],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S>, S: Scalar },
-            quote! { panic!("unimplemented Cross"); }
+            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S>, S: Numerical },
+            quote! {
+                let vec: R = vec![
+                    arg_0[1] * arg_1[2] - arg_1[1] * arg_0[2],
+                    arg_0[2] * arg_1[0] - arg_1[2] * arg_0[0],
+                    arg_0[0] * arg_1[1] - arg_1[1] * arg_0[0],
+                ].into();
+                return vec.into();
+            }
         ), (
             "Floor", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Scalar },
-            quote! { panic!("unimplemented Floor"); }
+            quote! { where T0: IntoValue<Output=R>, R: Floating },
+            quote! {
+                return arg_0.floor().into();
+            }
         ), (
             "Ceil", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Scalar },
-            quote! { panic!("unimplemented Ceil"); }
+            quote! { where T0: IntoValue<Output=R>, R: Floating },
+            quote! {
+                return arg_0.ceil().into();
+            }
         ), (
             "Round", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Scalar },
-            quote! { panic!("unimplemented Round"); }
+            quote! { where T0: IntoValue<Output=R>, R: Floating },
+            quote! {
+                return arg_0.round().into();
+            }
         ), (
             "Sin", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Scalar },
-            quote! { panic!("unimplemented Sin"); }
+            quote! { where T0: IntoValue<Output=R>, R: Floating },
+            quote! {
+                return arg_0.sin().into();
+            }
         ), (
             "Cos", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Scalar },
-            quote! { panic!("unimplemented Cos"); }
+            quote! { where T0: IntoValue<Output=R>, R: Floating },
+            quote! {
+                return arg_0.cos().into();
+            }
         ), (
             "Tan", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Scalar },
-            quote! { panic!("unimplemented Tan"); }
+            quote! { where T0: IntoValue<Output=R>, R: Floating },
+            quote! {
+                return arg_0.tan().into();
+            }
         ), (
             "Pow", 2, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar + Into<Value<R>> },
-            quote! { panic!("unimplemented Pow"); }
+            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Numerical },
+            quote! {
+                return Numerical::pow(arg_0, arg_1).into();
+            }
         ), (
             "Min", 2, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar + Into<Value<R>> },
+            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar },
             quote! {
-                let x = arg_0.get_concrete().unwrap();
-                let y = arg_1.get_concrete().unwrap();
-                return (if y < x { y } else { x }).into();
+                return (if arg_1 < arg_0 { arg_1 } else { arg_0 }).into();
             }
         ), (
             "Max", 2, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar + Into<Value<R>> },
+            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar },
             quote! {
-                let x = arg_0.get_concrete().unwrap();
-                let y = arg_1.get_concrete().unwrap();
-                return (if y > x { y } else { x }).into();
+                return (if arg_1 > arg_0 { arg_1 } else { arg_0 }).into();
             }
         ), (
-            "Length", 1, &[ Ident::from("V"), Ident::from("C") ],
-            quote! { where T0: IntoValue<Output=V>, V: Vector<R> + Index<u32, Output=C>, R: Scalar, C: Copy + Mul<C, Output=C> + Sum + Sqrt + Into<Value<R>> },
+            "Length", 1, &[ Ident::from("V") ],
+            quote! { where T0: IntoValue<Output=V>, V: Vector<R>, R: Floating },
             quote! {
-                let val = arg_0.get_concrete().unwrap();
-                let count = val.component_count();
-                let length: C = Sqrt::sqrt(
+                let count = arg_0.component_count();
+                let length: R = {
                     (0..count)
-                        .map(|i| val[i] * val[i])
+                        .map(|i| arg_0[i] * arg_0[i])
                         .sum()
-                );
+                };
 
-                return length.into();
+                return length.sqrt().into();
             }
         ), (
             "Distance", 2, &[ Ident::from("V") ],
-            quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R>, R: Scalar },
-            quote! { panic!("unimplemented Distance"); }
+            quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R> + Sub<V, Output=V>, R: Floating },
+            quote! {
+                return length(arg_0 - arg_1);
+            }
         ), (
             "Reflect", 2, &[ Ident::from("S") ],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S>, S: Scalar },
-            quote! { panic!("unimplemented Reflect"); }
+            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S> + Sub<R, Output=R>, S: Numerical + Mul<R, Output=R> },
+            quote! {
+                let res: S = dot(arg_1, arg_0).get_concrete().unwrap();
+                let res: S = res + res;
+                let res: R = arg_0 - res * arg_1;
+                return res.into();
+            }
         ), (
             "Refract", 3, &[ Ident::from("S") ],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=S>, R: Vector<S>, S: Scalar },
-            quote! { panic!("unimplemented Refract"); }
+            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=S>, R: Vector<S> + Sub<R, Output=R>, S: Floating + Mul<R, Output=R> },
+            quote! {
+                let one: S = Scalar::one();
+                let dot: S = dot(arg_1, arg_0).get_concrete().unwrap();
+                let k: S = one - arg_2 * arg_2 * (one - dot * dot);
+
+                let res: R = if k < Scalar::zero() {
+                    Vector::zero()
+                } else {
+                    let lhs: R = (arg_2 * arg_0).get_concrete().unwrap();
+                    let rhs: R = ((arg_2 * dot + k.sqrt()) * arg_1).get_concrete().unwrap();
+                    lhs - rhs
+                };
+
+                return res.into();
+            }
         ), (
-            "Mix", 3, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=R> },
-            quote! { panic!("unimplemented Mix"); }
+            "Mix", 3, &[ Ident::from("V0"), Ident::from("V1"), Ident::from("V2"), Ident::from("V3"), Ident::from("V4") ],
+            quote! { where T0: IntoValue<Output=V0>, T1: IntoValue<Output=V1>, T2: IntoValue<Output=V2>, V0: Copy + Add<V4, Output=R>, V1: Sub<V0, Output=V3>, V2: Mul<V3, Output=V4>, R: Into<Value<R>> },
+            quote! {
+                return (arg_0 + arg_2 * (arg_1 - arg_0)).into();
+            }
         )
     ];
 

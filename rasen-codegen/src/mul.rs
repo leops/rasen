@@ -1,10 +1,8 @@
-use quote::{Ident, Tokens};
-use defs::{
-    Category, Node,
-    single_node, all_nodes,
-};
+//! Mul trait implementation
 
-// Mul trait implementation
+use quote::{Ident, Tokens};
+use defs::{Category, Node, all_nodes};
+
 fn construct_type(ty: Node) -> Tokens {
     let Node { name, args, .. } = ty;
     match args {
@@ -85,19 +83,18 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
     let right_res = right_type.result.clone();
 
     let (result, mul_impl) = match (left_res.category, left_res.ty, right_res.category, right_res.ty) {
-        (Category::CONCRETE, _, Category::CONCRETE, _) => return None,
+        (Category::SCALAR, _, Category::SCALAR, _) => return None,
 
         (lc, lt, rc, rt) if lc == rc && lt == rt && left_res.size == right_res.size => (
             left_res.name.clone(),
             match lc {
-                Category::CONCRETE => unreachable!(),
                 Category::SCALAR => if lt == "bool" {
                     quote! {
-                        return (left_val.unwrap().0 && right_val.unwrap().0).into();
+                        return (left_val && right_val).into();
                     }
                 } else {
                     quote! {
-                        return (left_val.unwrap().0 * right_val.unwrap().0).into();
+                        return (left_val * right_val).into();
                     }
                 },
                 Category::VECTOR => {
@@ -124,8 +121,8 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                     };
 
                     quote! {
-                        let #result( #( #l_fields ),* ) = left_val.unwrap();
-                        let #result( #( #r_fields ),* ) = right_val.unwrap();
+                        let #result( #( #l_fields ),* ) = left_val;
+                        let #result( #( #r_fields ),* ) = right_val;
                         return #result( #( #res_fields ),* ).into();
                     }
                 },
@@ -139,8 +136,8 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                     };
 
                     quote! {
-                        let left_mat = left_val.unwrap().0;
-                        let right_mat = right_val.unwrap().0;
+                        let left_mat = left_val.0;
+                        let right_mat = right_val.0;
                         return #result([ #( #res_fields ),* ]).into();
                     }
                 },
@@ -151,21 +148,21 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
             left_res.name.clone(),
             match rc {
                 Category::VECTOR => unreachable!(),
-                Category::CONCRETE | Category::SCALAR => {
+                Category::SCALAR => {
                     impl_vector_times_scalar(
                         left_res.name.clone(),
                         left_res.size.unwrap(),
                         lt == "bool",
-                        quote! { left_val.unwrap() },
-                        quote! { right_val.unwrap().0 },
+                        quote! { left_val },
+                        quote! { right_val },
                     )
                 },
                 Category::MATRIX => impl_vector_times_matrix(
                     left_res.name.clone(),
                     left_res.size.unwrap(),
                     lt == "bool",
-                    quote! { left_val.unwrap() },
-                    quote! { right_val.unwrap().0 },
+                    quote! { left_val },
+                    quote! { right_val.0 },
                 ),
             }
         ),
@@ -173,21 +170,21 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
             right_res.name.clone(),
             match lc {
                 Category::VECTOR => unreachable!(),
-                Category::CONCRETE | Category::SCALAR => {
+                Category::SCALAR => {
                     impl_vector_times_scalar(
                         right_res.name.clone(),
                         right_res.size.unwrap(),
                         rt == "bool",
-                        quote! { right_val.unwrap() },
-                        quote! { left_val.unwrap().0 },
+                        quote! { right_val },
+                        quote! { left_val },
                     )
                 },
                 Category::MATRIX => impl_vector_times_matrix(
                     right_res.name.clone(),
                     right_res.size.unwrap(),
                     lt == "bool",
-                    quote! { right_val.unwrap() },
-                    quote! { left_val.unwrap().0 },
+                    quote! { right_val },
+                    quote! { left_val.0 },
                 ),
             }
         ),
@@ -204,9 +201,7 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
 
             #[inline]
             fn mul(self, rhs: #right_type) -> Self::Output {
-                let left_val = self.get_concrete();
-                let right_val = rhs.get_concrete();
-                if left_val.is_some() && right_val.is_some() {
+                if let (Some(left_val), Some(right_val)) = (self.get_concrete(), rhs.get_concrete()) {
                     #mul_impl
                 }
 
@@ -236,21 +231,6 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
     };
 
     Some(tokens)
-}
-
-pub fn impl_mul_single(lhs: &str, rhs: &str) -> Vec<Tokens> {
-    single_node(lhs).iter()
-        .flat_map(|left_type| {
-            single_node(rhs).iter()
-                .filter_map(|right_type| {
-                    impl_mul_variant(
-                        left_type.clone(),
-                        right_type.clone(),
-                    )
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
 }
 
 pub fn impl_mul() -> Vec<Tokens> {

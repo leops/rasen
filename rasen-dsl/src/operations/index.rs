@@ -3,10 +3,9 @@ use rasen::prelude::Node;
 use types::*;
 use operations::*;
 
-use std::ops::Index;
 use std::marker::PhantomData;
 
-pub fn index<T, V, R, S>(obj: T, index: u32) -> Value<S> where T: IntoValue<Output=V>, V: Vector<S> + Index<u32, Output=R>, R: Clone + Into<Value<S>>, S: Scalar {
+pub fn index<T, V, S>(obj: T, index: u32) -> Value<S> where T: IntoValue<Output=V>, V: Vector<S>, S: Scalar + Into<Value<S>> {
     if let Some(value) = obj.get_concrete() {
         return value[index].clone().into();
     }
