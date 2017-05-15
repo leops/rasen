@@ -1,19 +1,10 @@
-//! Exposes Rust counterparts of common GLSL functions
+//! Definitions for the Value type
 
-use rasen::prelude::{Node, Graph, NodeIndex};
-
-use types::*;
-
-mod index;
-pub use self::index::*;
-
-mod mul;
-pub use self::mul::*;
+use rasen::prelude::{Graph, NodeIndex};
 
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::ops::{Add, Sub, Mul};
 
 pub type GraphRef = Rc<RefCell<Graph>>;
 
@@ -90,5 +81,3 @@ impl<'a, T> IntoValue for &'a Value<T> where T: IntoValue + Clone {
         }
     }
 }
-
-::rasen_codegen::decl_operations!();

@@ -1,26 +1,10 @@
 //! Mul trait implementation
 
 use quote::{Ident, Tokens};
-use defs::{Category, Node, all_nodes};
+use defs::{Category, Node};
+use math::construct_type;
 
-fn construct_type(ty: Node) -> Tokens {
-    let Node { name, args, .. } = ty;
-    match args {
-        Some(list) => {
-            let value = list.into_iter()
-                .map(|ty| ty.name)
-                .collect::<Vec<_>>();
-
-            quote! {
-                #name < #( #value ),* >
-            }
-        },
-
-        None => quote! { #name },
-    }
-}
-
-fn impl_vector_times_scalar(result: Ident, size: u32, is_bool: bool, vector: Tokens, scalar: Tokens) -> Tokens {
+fn impl_vector_times_scalar(result: Ident, size: u32, vector: Tokens, scalar: Tokens) -> Tokens {
     let v_fields: Vec<_> = {
         (0..size)
             .map(|i| Ident::from(format!("v_{}", i)))
@@ -28,9 +12,7 @@ fn impl_vector_times_scalar(result: Ident, size: u32, is_bool: bool, vector: Tok
     };
     let res_fields: Vec<_> = {
         v_fields.iter()
-            .map(|f| if is_bool {
-                quote! { #f && other }
-            } else {
+            .map(|f| {
                 quote! { #f * other }
             })
             .collect()
@@ -43,7 +25,7 @@ fn impl_vector_times_scalar(result: Ident, size: u32, is_bool: bool, vector: Tok
     }
 }
 
-fn impl_vector_times_matrix(result: Ident, size: u32, is_bool: bool, vector: Tokens, matrix: Tokens) -> Tokens {
+fn impl_vector_times_matrix(result: Ident, size: u32, vector: Tokens, matrix: Tokens) -> Tokens {
     let v_fields: Vec<_> = {
         (0..size)
             .map(|i| Ident::from(format!("v_{}", i)))
@@ -57,11 +39,7 @@ fn impl_vector_times_matrix(result: Ident, size: u32, is_bool: bool, vector: Tok
                         .map(|j| {
                             let f = Ident::from(format!("v_{}", j));
                             let index = ((i * size) + j) as usize;
-                            if is_bool {
-                                quote! { #f && matrix[#index] }
-                            } else {
-                                quote! { #f * matrix[#index] }
-                            }
+                            quote! { #f * matrix[#index] }
                         })
                         .collect()
                 };
@@ -78,21 +56,19 @@ fn impl_vector_times_matrix(result: Ident, size: u32, is_bool: bool, vector: Tok
     }
 }
 
-fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
+pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
     let left_res = left_type.result.clone();
     let right_res = right_type.result.clone();
 
     let (result, mul_impl) = match (left_res.category, left_res.ty, right_res.category, right_res.ty) {
+        (_, "bool", _, _) |
+        (_, _, _, "bool") |
         (Category::SCALAR, _, Category::SCALAR, _) => return None,
 
         (lc, lt, rc, rt) if lc == rc && lt == rt && left_res.size == right_res.size => (
             left_res.name.clone(),
             match lc {
-                Category::SCALAR => if lt == "bool" {
-                    quote! {
-                        return (left_val && right_val).into();
-                    }
-                } else {
+                Category::SCALAR => {
                     quote! {
                         return (left_val * right_val).into();
                     }
@@ -112,9 +88,7 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                     let res_fields: Vec<_> = {
                         l_fields.iter()
                             .zip(r_fields.iter())
-                            .map(|(l_f, r_f)| if lt == "bool" {
-                                quote! { #l_f && #r_f }
-                            } else {
+                            .map(|(l_f, r_f)| {
                                 quote! { #l_f * #r_f }
                             })
                             .collect()
@@ -152,7 +126,6 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                     impl_vector_times_scalar(
                         left_res.name.clone(),
                         left_res.size.unwrap(),
-                        lt == "bool",
                         quote! { left_val },
                         quote! { right_val },
                     )
@@ -160,7 +133,6 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                 Category::MATRIX => impl_vector_times_matrix(
                     left_res.name.clone(),
                     left_res.size.unwrap(),
-                    lt == "bool",
                     quote! { left_val },
                     quote! { right_val.0 },
                 ),
@@ -174,7 +146,6 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                     impl_vector_times_scalar(
                         right_res.name.clone(),
                         right_res.size.unwrap(),
-                        rt == "bool",
                         quote! { right_val },
                         quote! { left_val },
                     )
@@ -182,7 +153,6 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                 Category::MATRIX => impl_vector_times_matrix(
                     right_res.name.clone(),
                     right_res.size.unwrap(),
-                    lt == "bool",
                     quote! { right_val },
                     quote! { left_val.0 },
                 ),
@@ -195,7 +165,7 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
     let left_type = construct_type(left_type);
     let right_type = construct_type(right_type);
 
-    let tokens = quote! {
+    Some(quote! {
         impl Mul<#right_type> for #left_type {
             type Output = Value<#result>;
 
@@ -228,22 +198,5 @@ fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                 unreachable!()
             }
         }
-    };
-
-    Some(tokens)
-}
-
-pub fn impl_mul() -> Vec<Tokens> {
-    all_nodes().iter()
-        .flat_map(|left_type| {
-            all_nodes().iter()
-                .filter_map(|right_type| {
-                    impl_mul_variant(
-                        left_type.clone(),
-                        right_type.clone(),
-                    )
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+    })
 }

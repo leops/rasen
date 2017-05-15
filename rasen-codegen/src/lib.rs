@@ -13,6 +13,7 @@ mod defs;
 mod types;
 mod operations;
 mod mul;
+mod math;
 
 use proc_macro::TokenStream;
 
@@ -24,18 +25,15 @@ pub fn decl_types(_: TokenStream) -> TokenStream {
     gen.parse().unwrap()
 }
 
-/// Create the declarations of all the GLSL operation functions
+/// Create the declarations of all the GLSL operation functions,
+/// and implement the math traits for the GLSL types
 #[proc_macro]
 pub fn decl_operations(_: TokenStream) -> TokenStream {
     let ops = operations::impl_operations();
-    let gen = quote! { #( #ops )* };
-    gen.parse().unwrap()
-}
-
-/// Implement the Mul trait on all the declared types
-#[proc_macro]
-pub fn impl_mul(_: TokenStream) -> TokenStream {
-    let impls = mul::impl_mul();
-    let gen = quote! { #( #impls )* };
+    let math = math::impl_math();
+    let gen = quote! {
+        #( #ops )*
+        #( #math )*
+    };
     gen.parse().unwrap()
 }

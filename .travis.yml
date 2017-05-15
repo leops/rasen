@@ -18,8 +18,4 @@ before_script:
     - (cargo install rustfmt || true)
 
 # Run tests and benchmarks.
-script: |
-      # Run tests
-      cargo test -p rasen -p rasen-dsl &&
-      # Run benchmarks
-      cargo bench -p rasen -p rasen-dsl
+script: cargo test -p rasen -p rasen-dsl && cargo bench -p rasen -p rasen-dsl

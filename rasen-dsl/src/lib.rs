@@ -27,6 +27,7 @@ extern crate rasen;
 extern crate rasen_codegen;
 
 pub mod types;
+pub mod value;
 pub mod shader;
 pub mod operations;
 pub mod prelude;

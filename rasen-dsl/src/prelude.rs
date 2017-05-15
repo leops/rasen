@@ -3,5 +3,6 @@
 pub use rasen::prelude::*;
 
 pub use types::*;
+pub use value::*;
 pub use shader::*;
 pub use operations::*;

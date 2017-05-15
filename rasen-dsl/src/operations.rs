@@ -1,11 +1,14 @@
+//! Exposes Rust counterparts of common GLSL functions
+
 use rasen::prelude::Node;
 
 use types::*;
-use operations::*;
+use value::*;
 
 use std::marker::PhantomData;
+use std::ops::{Add, Sub, Mul, Div, Rem};
 
-pub fn index<T, V, S>(obj: T, index: u32) -> Value<S> where T: IntoValue<Output=V>, V: Vector<S>, S: Scalar + Into<Value<S>> {
+pub fn index<T, V, S>(obj: T, index: u32) -> Value<S> where T: IntoValue<Output=V>, V: Vector<S>, S: Scalar {
     if let Some(value) = obj.get_concrete() {
         return value[index].clone().into();
     }
@@ -28,3 +31,5 @@ pub fn index<T, V, S>(obj: T, index: u32) -> Value<S> where T: IntoValue<Output=
 
     unreachable!()
 }
+
+::rasen_codegen::decl_operations!();

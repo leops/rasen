@@ -110,12 +110,6 @@ pub fn impl_operations() -> Vec<Tokens> {
                 return min(max(x, min_val), max_val);
             }
         ), (
-            "Modulus", 2, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Numerical },
-            quote! {
-                return (arg_0 % arg_1).into();
-            }
-        ), (
             "Cross", 2, &[ Ident::from("S") ],
             quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S>, S: Numerical },
             quote! {

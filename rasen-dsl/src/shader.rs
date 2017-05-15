@@ -3,7 +3,7 @@
 use rasen::prelude::{ShaderType, build_program};
 use rasen::errors;
 
-use operations::{GraphRef, Value};
+use value::{GraphRef, Value};
 
 /// The Shader builder, a lightweight wrapper around a shared mutable Graph
 pub struct Shader {

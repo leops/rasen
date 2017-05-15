@@ -4,8 +4,8 @@ use rasen::prelude::{Node, TypeName, TypedValue, NodeIndex};
 
 use std::iter::Sum;
 use std::marker::PhantomData;
+use value::{GraphRef, Value, IntoValue};
 use shader::{Shader, Input, Uniform, Output};
-use operations::{GraphRef, Value, IntoValue};
 use std::ops::{Add, Sub, Mul, Div, Rem, Index};
 
 pub trait Scalar: Copy + PartialOrd + PartialEq + IntoValue<Output=Self> + Into<Value<Self>> {
@@ -32,7 +32,7 @@ pub trait Floating : Numerical {
     fn tan(self) -> Self;
 }
 
-pub trait Vector<S>: Copy + From<Vec<S>> + Index<u32, Output=S> + Mul<Self, Output=Value<Self>> + IntoValue<Output=Self> + Into<Value<Self>> where S: Scalar {
+pub trait Vector<S>: Copy + From<Vec<S>> + Index<u32, Output=S> + IntoValue<Output=Self> + Into<Value<Self>> where S: Scalar {
     fn zero() -> Self;
     fn one() -> Self;
     fn component_count(&self) -> u32;
