@@ -3,11 +3,18 @@
 use quote::{Ident, Tokens};
 use defs::{Category, Type, all_types};
 
-fn trait_scalar(name: Ident, (zero, one): (Ident, Ident)) -> Tokens {
+fn trait_scalar(name: Ident, ty: Ident, (zero, one): (Ident, Ident)) -> Tokens {
     quote! {
         impl Scalar for #name {
             fn zero() -> Self { #zero }
             fn one() -> Self { #one }
+        }
+
+        impl ValueIter<#ty> for #name {
+            type Iter = ::std::iter::Once<Value<#ty>>;
+            fn iter<'a>(obj: &Self) -> Self::Iter {
+                ::std::iter::once(obj.into())
+            }
         }
     }
 }
@@ -23,9 +30,7 @@ fn trait_numerical(name: Ident, pow_fn: Ident, pow_ty: Ident) -> Tokens {
 fn trait_integer(name: Ident, is_signed: bool) -> Tokens {
     quote! {
         impl Integer for #name {
-            fn is_signed(&self) -> bool {
-                return #is_signed;
-            }
+            fn is_signed() -> bool { #is_signed }
         }
     }
 }
@@ -33,7 +38,7 @@ fn trait_integer(name: Ident, is_signed: bool) -> Tokens {
 fn trait_float(name: Ident, is_double: bool) -> Tokens {
     quote! {
         impl Floating for #name {
-            fn is_double(&self) -> bool { #is_double }
+            fn is_double() -> bool { #is_double }
             fn sqrt(self) -> Self { self.sqrt() }
             fn floor(self) -> Self { self.floor() }
             fn ceil(self) -> Self { self.ceil() }
@@ -48,11 +53,27 @@ fn trait_float(name: Ident, is_double: bool) -> Tokens {
 fn trait_vector(name: Ident, component_count: u32, component_type: Ident, (zero, one): (Ident, Ident)) -> Tokens {
     let fields_zero: Vec<_> = (0..component_count).map(|_| zero.clone()).collect();
     let fields_one: Vec<_> = (0..component_count).map(|_| one.clone()).collect();
+    let obj_fields: Vec<_> = {
+        (0..component_count)
+            .map(|i| {
+                let idx = Ident::from(format!("{}", i));
+                quote! { obj.#idx.into() }
+            })
+            .collect()
+    };
+
     quote! {
         impl Vector<#component_type> for #name {
             fn zero() -> Self { #name( #( #fields_zero ),* ) }
             fn one() -> Self { #name( #( #fields_one ),* ) }
-            fn component_count(&self) -> u32 { #component_count }
+            fn component_count() -> u32 { #component_count }
+        }
+
+        impl ValueIter<#component_type> for #name {
+            type Iter = ::std::vec::IntoIter<Value<#component_type>>;
+            fn iter<'a>(obj: &Self) -> Self::Iter {
+                vec![ #( #obj_fields ),* ].into_iter()
+            }
         }
     }
 }
@@ -71,7 +92,15 @@ fn trait_matrix(name: Ident, column_count: u32, column_type: Ident, scalar_type:
     quote! {
         impl Matrix<#column_type, #scalar_type> for #name {
             fn identity() -> Self { #name( #identity ) }
-            fn column_count(&self) -> u32 { #column_count }
+            fn column_count() -> u32 { #column_count }
+        }
+
+        impl ValueIter<#scalar_type> for #name {
+            type Iter = ::std::vec::IntoIter<Value<#scalar_type>>;
+            fn iter<'a>(obj: &Self) -> Self::Iter {
+                let lst: Vec<_> = obj.0.into_iter().map(|s| s.into()).collect();
+                lst.into_iter()
+            }
         }
     }
 }
@@ -100,21 +129,19 @@ pub fn type_structs() -> Vec<Tokens> {
             let Type { name, category, ty, component, size, .. } = ty.clone();
             let decl = match category {
                 Category::SCALAR => {
-                    let mut traits = Vec::new();
+                    let mut traits = vec![
+                        trait_scalar(name.clone(), Ident::from(ty), type_values(ty)),
+                    ];
 
                     match ty {
-                        "bool" => {
-                            traits.push(trait_scalar(name.clone(), type_values(ty)));
-                        },
+                        "bool" => {},
 
                         "i32" | "u32" => {
-                            traits.push(trait_scalar(name.clone(), type_values(ty)));
                             traits.push(trait_numerical(name.clone(), Ident::from("pow"), Ident::from("u32")));
                             traits.push(trait_integer(name.clone(), ty == "i32"));
                         },
 
                         "f32" | "f64" => {
-                            traits.push(trait_scalar(name.clone(), type_values(ty)));
                             traits.push(trait_numerical(name.clone(), Ident::from("powf"), Ident::from(ty)));
                             traits.push(trait_float(name.clone(), ty == "f64"));
                         },
@@ -305,6 +332,13 @@ pub fn type_structs() -> Vec<Tokens> {
                         impl Into<Value<#name>> for #name {
                             fn into(self) -> Value<#name> {
                                 Value::Concrete(self)
+                            }
+                        }
+
+                        impl Index<u32> for #name {
+                            type Output = #ty;
+                            fn index(&self, index: u32) -> &Self::Output {
+                                &self.0[index as usize]
                             }
                         }
 

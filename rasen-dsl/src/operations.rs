@@ -32,4 +32,12 @@ pub fn index<T, V, S>(obj: T, index: u32) -> Value<S> where T: IntoValue<Output=
     unreachable!()
 }
 
+impl<V, S> ValueIter<S> for Value<V> where V: Vector<S>, S: Scalar {
+    type Iter = ::std::vec::IntoIter<Value<S>>;
+    fn iter<'a>(obj: &Self) -> Self::Iter {
+        let vec: Vec<_> = (0..V::component_count()).map(move |i| index(obj.clone(), i)).collect();
+        vec.into_iter()
+    }
+}
+
 ::rasen_codegen::decl_operations!();

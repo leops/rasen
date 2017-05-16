@@ -86,7 +86,7 @@ pub fn impl_operations() -> Vec<Tokens> {
             "Normalize", 1, &[ Ident::from("S") ],
             quote! { where T0: IntoValue<Output=R>, R: Vector<S>, S: Floating },
             quote! {
-                let count = arg_0.component_count();
+                let count = R::component_count();
                 let length = length(arg_0).get_concrete().unwrap();
                 let arr: Vec<_> = (0..count).map(|i| arg_0[i] / length).collect();
                 let vec: R = arr.into();
@@ -96,7 +96,7 @@ pub fn impl_operations() -> Vec<Tokens> {
             "Dot", 2, &[ Ident::from("V") ],
             quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R>, R: Numerical },
             quote! {
-                let count = arg_0.component_count();
+                let count = V::component_count();
                 let val: R = (0..count).map(|i| arg_0[i] * arg_1[i]).sum();
                 return val.into();
             }
@@ -178,7 +178,7 @@ pub fn impl_operations() -> Vec<Tokens> {
             "Length", 1, &[ Ident::from("V") ],
             quote! { where T0: IntoValue<Output=V>, V: Vector<R>, R: Floating },
             quote! {
-                let count = arg_0.component_count();
+                let count = V::component_count();
                 let length: R = {
                     (0..count)
                         .map(|i| arg_0[i] * arg_0[i])

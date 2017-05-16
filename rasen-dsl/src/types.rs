@@ -8,7 +8,12 @@ use value::{GraphRef, Value, IntoValue};
 use shader::{Shader, Input, Uniform, Output};
 use std::ops::{Add, Sub, Mul, Div, Rem, Index};
 
-pub trait Scalar: Copy + PartialOrd + PartialEq + IntoValue<Output=Self> + Into<Value<Self>> {
+pub trait ValueIter<T> {
+    type Iter: Iterator<Item=Value<T>>;
+    fn iter<'a>(obj: &Self) -> Self::Iter;
+}
+
+pub trait Scalar: 'static + Copy + IntoValue<Output=Self> + Into<Value<Self>> + ValueIter<Self> + PartialOrd + PartialEq {
     fn zero() -> Self;
     fn one() -> Self;
 }
@@ -18,11 +23,11 @@ pub trait Numerical : Scalar + Sum + Add<Self, Output=Self> + Sub<Self, Output=S
 }
 
 pub trait Integer: Numerical {
-    fn is_signed(&self) -> bool;
+    fn is_signed() -> bool;
 }
 
 pub trait Floating : Numerical {
-    fn is_double(&self) -> bool;
+    fn is_double() -> bool;
     fn sqrt(self) -> Self;
     fn floor(self) -> Self;
     fn ceil(self) -> Self;
@@ -32,15 +37,15 @@ pub trait Floating : Numerical {
     fn tan(self) -> Self;
 }
 
-pub trait Vector<S>: Copy + From<Vec<S>> + Index<u32, Output=S> + IntoValue<Output=Self> + Into<Value<Self>> where S: Scalar {
+pub trait Vector<S>: Copy + IntoValue<Output=Self> + Into<Value<Self>> + ValueIter<S> + From<Vec<S>> + Index<u32, Output=S> where S: Scalar {
     fn zero() -> Self;
     fn one() -> Self;
-    fn component_count(&self) -> u32;
+    fn component_count() -> u32;
 }
 
-pub trait Matrix<V, S>: Into<Value<Self>> where V: Vector<S>, S: Scalar {
+pub trait Matrix<V, S>: Copy + IntoValue<Output=Self> + Into<Value<Self>> + ValueIter<S> + Index<u32, Output=S> where V: Vector<S>, S: Scalar {
     fn identity() -> Self;
-    fn column_count(&self) -> u32;
+    fn column_count() -> u32;
 }
 
 ::rasen_codegen::decl_types!();

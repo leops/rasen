@@ -4,8 +4,8 @@ use rasen_dsl::prelude::*;
 pub fn basic_vert(a_pos: Value<Vec3>, a_normal: Value<Vec3>, a_uv: Value<Vec2>, projection: Value<Mat4>, view: Value<Mat4>, model: Value<Mat4>) -> (Value<Vec4>, Value<Vec4>, Value<Vec2>) {
     let mvp = projection * view * model.clone();
 
-    let v_pos = mvp * vec4(index(&a_pos, 0), index(&a_pos, 1), index(&a_pos, 2), 1.0f32);
-    let v_norm = model * vec4(index(&a_normal, 0), index(&a_normal, 1), index(&a_normal, 2), 1.0f32);
+    let v_pos = mvp * vec4!(a_pos, 1.0f32);
+    let v_norm = model * vec4!(a_normal, 1.0f32);
 
     (v_pos, v_norm, a_uv)
 }
