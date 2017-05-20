@@ -2,6 +2,7 @@
 
 use rasen::prelude::Node;
 
+use types::traits::*;
 use types::*;
 use value::*;
 
@@ -40,4 +41,4 @@ impl<V, S> ValueIter<S> for Value<V> where V: Vector<S>, S: Scalar {
     }
 }
 
-::rasen_codegen::decl_operations!();
+include!(concat!(env!("OUT_DIR"), "/operations.rs"));

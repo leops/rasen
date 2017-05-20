@@ -19,12 +19,11 @@
 //! # }
 //! ```
 
-#![feature(specialization, conservative_impl_trait, use_extern_macros)]
+#![feature(specialization, conservative_impl_trait)]
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 
 extern crate rasen;
-extern crate rasen_codegen;
 
 pub mod types;
 pub mod value;

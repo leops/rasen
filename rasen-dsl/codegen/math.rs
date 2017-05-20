@@ -1,8 +1,8 @@
 //! Mul trait implementation
 
 use quote::{Ident, Tokens};
-use defs::{Category, Node, all_nodes};
-use mul::impl_mul_variant;
+use codegen::defs::{Category, Node, all_nodes};
+use codegen::mul::impl_mul_variant;
 
 pub fn construct_type(ty: Node) -> Tokens {
     let Node { name, args, .. } = ty;

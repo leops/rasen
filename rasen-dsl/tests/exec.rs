@@ -7,6 +7,7 @@ extern crate rasen_dsl;
 mod data;
 use data::*;
 use rasen_dsl::prelude::*;
+use rasen_dsl::value::IntoValue;
 
 #[test]
 fn test_run_basic_vert() {

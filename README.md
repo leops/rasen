@@ -99,3 +99,16 @@ Ultimately, the goal for the DSL crate (beside being a statically-checked equiva
 an API to test the execution of a shader on the CPU, with all the debugging tools that such an environment provides. The
 library currently provides all the conversion primitives to turn your scalar / vectors / matrices into Value<_> types to
 test your program, however most GLSL operations are left unimplemented.
+
+# Plugin
+Finally, the `rasen_plugin` crate is a compiler plugin exposing a few utility macro and attributes to make writing
+shaders in Rust event easier:
+```rust
+use rasen_dsl::prelude::*;
+
+#[shader]
+pub fn basic_vert(a_pos: Value<Vec3>, projection: Value<Mat4>, view: Value<Mat4>, model: Value<Mat4>) -> Value<Vec4> {
+   let mvp = projection * view * model;
+   mvp * vec4!(a_pos, 1.0f32)
+}
+```

@@ -1,7 +1,7 @@
 //! GLSL Types declarations
 
 use quote::{Ident, Tokens};
-use defs::{Category, Type, all_types};
+use codegen::defs::{Category, Type, all_types};
 
 fn trait_scalar(name: Ident, ty: Ident, (zero, one): (Ident, Ident)) -> Tokens {
     quote! {

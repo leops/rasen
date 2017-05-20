@@ -27,7 +27,7 @@ pub trait IntoValue {
     /// Gets a graph reference from this value, if it holds one
     fn get_graph(&self) -> Option<GraphRef> { None }
     /// Gets the concrete value of this value, if it is indeed concrete
-    fn get_concrete(&self) -> Option<Self::Output> { None }
+    fn get_concrete(&self) -> Option<Self::Output>;
     /// Registers this value into a Graph and returns the node index
     fn get_index(&self, graph: GraphRef) -> NodeIndex<u32>;
 }

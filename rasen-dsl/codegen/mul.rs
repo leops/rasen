@@ -1,8 +1,8 @@
 //! Mul trait implementation
 
 use quote::{Ident, Tokens};
-use defs::{Category, Node};
-use math::construct_type;
+use codegen::defs::{Category, Node};
+use codegen::math::construct_type;
 
 fn impl_vector_times_scalar(result: Ident, size: u32, vector: Tokens, scalar: Tokens) -> Tokens {
     let v_fields: Vec<_> = {
