@@ -1,28 +1,25 @@
-#![feature(test, plugin, custom_attribute)]
-#![plugin(rasen_plugin)]
+#![feature(test)]
 
-extern crate rasen;
-extern crate rasen_dsl;
 extern crate test;
-
-mod data;
+extern crate rasen;
 
 use test::Bencher;
-use data::*;
 use rasen::prelude::*;
+
+include!("../../tests/graph.rs");
 
 #[bench]
 fn bench_build_basic_vert(b: &mut Bencher) {
-    let graph = basic_vert_shader();
+    let graph = build_basic_vert();
     b.iter(||
-        graph.build(ShaderType::Vertex).unwrap()
+        build_program(&graph, ShaderType::Vertex).unwrap()
     );
 }
 
 #[bench]
 fn bench_build_basic_frag(b: &mut Bencher) {
-    let graph = basic_frag_shader();
+    let graph = build_basic_frag();
     b.iter(||
-        graph.build(ShaderType::Fragment).unwrap()
+        build_program(&graph, ShaderType::Fragment).unwrap()
     );
 }

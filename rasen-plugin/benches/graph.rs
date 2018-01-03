@@ -1,14 +1,14 @@
 #![feature(test, plugin, custom_attribute)]
 #![plugin(rasen_plugin)]
 
+extern crate test;
 extern crate rasen;
 extern crate rasen_dsl;
-extern crate test;
-
-mod data;
 
 use test::Bencher;
-use data::*;
+use rasen_dsl::prelude::*;
+
+include!("../../tests/plugin.rs");
 
 #[bench]
 fn bench_construct_basic_frag(b: &mut Bencher) {

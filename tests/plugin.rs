@@ -1,5 +1,3 @@
-use rasen_dsl::prelude::*;
-
 #[shader]
 pub fn basic_vert(a_pos: Value<Vec3>, a_normal: Value<Vec3>, a_uv: Value<Vec2>, projection: Value<Mat4>, view: Value<Mat4>, model: Value<Mat4>) -> (Value<Vec4>, Value<Vec4>, Value<Vec2>) {
     let mvp = projection * view * model.clone();

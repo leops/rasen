@@ -1,13 +1,10 @@
-#![feature(plugin, custom_attribute)]
-#![plugin(rasen_plugin)]
-
 extern crate rasen;
 extern crate rasen_dsl;
 
-mod data;
-use data::*;
 use rasen_dsl::prelude::*;
 use rasen_dsl::value::IntoValue;
+
+include!("../../tests/dsl.rs");
 
 #[test]
 fn test_run_basic_vert() {
