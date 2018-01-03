@@ -6,15 +6,14 @@ use rasen::errors;
 use value::{GraphRef, Value};
 
 /// The Shader builder, a lightweight wrapper around a shared mutable Graph
+#[derive(Default)]
 pub struct Shader {
     pub graph: GraphRef,
 }
 
 impl Shader {
     pub fn new() -> Shader {
-        Shader {
-            graph: Default::default(),
-        }
+        Default::default()
     }
 
     pub fn build(&self, ty: ShaderType) -> errors::Result<Vec<u8>> {

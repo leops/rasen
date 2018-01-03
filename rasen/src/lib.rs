@@ -58,9 +58,13 @@
 //! directly into it.
 //!
 
-#![feature(associated_consts, conservative_impl_trait)]
+#![feature(conservative_impl_trait)]
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
+#![cfg_attr(feature="clippy", warn(
+    option_unwrap_used, result_unwrap_used,
+    single_match_else
+))]
 
 extern crate petgraph;
 extern crate spirv_headers;
@@ -74,6 +78,5 @@ mod builder;
 mod node;
 
 pub mod graph;
-pub mod glsl;
 pub mod errors;
 pub mod prelude;

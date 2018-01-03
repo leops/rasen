@@ -1,6 +1,6 @@
 [package]
 name = "rasen"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["l3ops <rasen@leops.me>"]
 description = "Generate SPIR-V bytecode from a data flow graph"
 documentation = "https://docs.rs/rasen/"
@@ -28,14 +28,15 @@ default = []
 
 [build-dependencies]
 quote = "0.3.15"
+clippy = { version = "0.0.177", optional = true }
 
 [dev-dependencies]
 rasen-dsl = { version = "0.1.0", path = "../rasen-dsl" }
 rasen-plugin = { version = "0.1.0", path = "../rasen-plugin" }
 
 [dependencies]
-petgraph = "0.4.4"
+petgraph = "0.4.5"
 error-chain = "0.10.0"
-spirv_headers = "1.1.5"
-rspirv = "0.4.0"
-clippy = { version = "0.0.133", optional = true }
+spirv_headers = "1.2.2"
+rspirv = "0.5.1"
+clippy = { version = "0.0.177", optional = true }

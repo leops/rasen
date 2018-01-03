@@ -16,48 +16,44 @@ include!(concat!(env!("OUT_DIR"), "/node.rs"));
 impl Node {
     /// Insert this Node into a Program
     pub fn get_result(&self, module: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
-        use glsl::GLSL::*;
+        // use spirv_headers::GLOp::*;
 
         macro_rules! impl_glsl_call {
-            ( $function:ident, $argc:expr ) => {
-                {
-                    if args.len() != $argc {
-                        Err(ErrorKind::WrongArgumentsCount(args.len(), $argc))?;
-                    }
-
-                    let ext_id = module.import_set("GLSL.std.450");
-
-                    let (res_ty, _) = args[0];
-                    let res_type = module.register_type(res_ty);
-
-                    let mut operands = Vec::with_capacity(
-                        2 + args.len()
-                    );
-                    operands.push(
-                        Operand::IdRef(ext_id)
-                    );
-                    operands.push(
-                        Operand::LiteralExtInstInteger($function as u32)
-                    );
-                    operands.extend(
-                        args.into_iter()
-                            .map(|(_, rid)| Operand::IdRef(rid))
-                    );
-
-                    let result_id = module.get_id();
-
-                    module.push_instruction(
-                        Instruction::new(
-                            Op::ExtInst,
-                            Some(res_type),
-                            Some(result_id),
-                            operands
-                        )
-                    );
-
-                    Ok((res_ty, result_id))
+            ( $function:ident, $argc:expr ) => {{
+                if args.len() != $argc {
+                    Err(ErrorKind::WrongArgumentsCount(args.len(), $argc))?;
                 }
-            };
+
+                let ext_id = module.import_set("GLSL.std.450");
+
+                let (res_ty, _) = args[0];
+                let res_type = module.register_type(res_ty);
+
+                let mut operands = Vec::with_capacity($argc + 2);
+                operands.push(
+                    Operand::IdRef(ext_id)
+                );
+                operands.push(
+                    Operand::LiteralExtInstInteger(::spirv_headers::GLOp::$function as u32)
+                );
+                operands.extend(
+                    args.into_iter()
+                        .map(|(_, rid)| Operand::IdRef(rid))
+                );
+
+                let result_id = module.get_id();
+
+                module.push_instruction(
+                    Instruction::new(
+                        Op::ExtInst,
+                        Some(res_type),
+                        Some(result_id),
+                        operands
+                    )
+                );
+
+                Ok((res_ty, result_id))
+            }};
         }
 
         match *self {
@@ -337,6 +333,8 @@ impl Node {
             Node::Distance => operations::distance(module, &args),
             Node::Reflect => operations::reflect(module, &args),
             Node::Refract => operations::refract(module, &args),
+
+            Node::Sample => operations::sample(module, &args),
         }
     }
 }

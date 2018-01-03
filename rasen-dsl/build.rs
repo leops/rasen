@@ -17,7 +17,7 @@ mod codegen;
 use codegen::*;
 
 /// Create the declarations of all the GLSL type structs
-pub fn decl_types(out_dir: &String) {
+pub fn decl_types(out_dir: &str) {
     let types = types::type_structs();
     let gen = quote! { #( #types )* };
 
@@ -28,7 +28,7 @@ pub fn decl_types(out_dir: &String) {
 
 /// Create the declarations of all the GLSL operation functions,
 /// and implement the math traits for the GLSL types
-pub fn decl_operations(out_dir: &String) {
+pub fn decl_operations(out_dir: &str) {
     let ops = operations::impl_operations();
     let math = math::impl_math();
     let gen = quote! {

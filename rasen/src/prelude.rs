@@ -1,6 +1,5 @@
 //! Exports everything you probably want to have in scope to get started with Rasen
 
-pub use glsl;
 pub use graph::*;
 pub use builder::*;
 pub use types::*;

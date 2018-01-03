@@ -116,7 +116,7 @@ pub fn impl_operations() -> Vec<Tokens> {
                 let vec: R = vec![
                     arg_0[1] * arg_1[2] - arg_1[1] * arg_0[2],
                     arg_0[2] * arg_1[0] - arg_1[2] * arg_0[0],
-                    arg_0[0] * arg_1[1] - arg_1[1] * arg_0[0],
+                    arg_0[0] * arg_1[1] - arg_1[0] * arg_0[1],
                 ].into();
                 return vec.into();
             }

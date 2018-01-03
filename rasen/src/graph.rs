@@ -45,8 +45,8 @@ impl Graph {
     pub fn outputs<'a>(&'a self) -> Box<Iterator<Item=NodeIndex<u32>> + 'a> {
         Box::new(
             self.graph.externals(Outgoing)
-                .filter(move |index| match self.graph[*index] {
-                    Node::Output(_, _) => true,
+                .filter(move |index| match self.graph.node_weight(*index) {
+                    Some(&Node::Output(_, _)) => true,
                     _ => false,
                 })
         )

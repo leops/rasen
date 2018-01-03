@@ -20,6 +20,7 @@ pub fn construct_type(ty: Node) -> Tokens {
     }
 }
 
+#[cfg_attr(feature="clippy", allow(match_same_arms))]
 fn impl_math_variant((trait_id, node_id, operator): (Ident, Ident, Ident), left_type: Node, right_type: Node) -> Option<Tokens> {
     let left_res = left_type.result.clone();
     let right_res = right_type.result.clone();

@@ -53,7 +53,14 @@ fn test_run_basic_vert() {
 
 #[test]
 fn test_run_basic_frag() {
-    let color = basic_frag(vec3(0.0f32, 1.0f32, 0.0f32));
+    let color = basic_frag(
+        vec3(0.0f32, 1.0f32, 0.0f32),
+        vec2(0.0f32, 0.0f32),
+        Value::Concrete(Sampler(
+            Vec4(0.25f32, 0.625f32, 1.0f32, 1.0f32),
+        )),
+    );
+
     let Vec4(color_r, color_g, color_b, color_a) = color.get_concrete().expect("color is not concrete");
     assert_eq!((color_r, color_g, color_b, color_a), (0.025, 0.0625, 0.1, 0.1));
 }

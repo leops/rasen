@@ -65,13 +65,13 @@ pub fn all_types() -> Vec<Type> {
         res.push(scalar_type(res_name, ty));
     }
 
-    for size in 2u32...4u32 {
-        for &(scalar_name, prefix, ty) in INTS.iter() {
+    for size in 2u32..=4u32 {
+        for &(scalar_name, prefix, ty) in &INTS {
             let vec_name = format!("{}Vec{}", prefix.to_string().to_uppercase(), size);
             res.push(vector_type(&vec_name, scalar_name, ty, size));
         }
 
-        for &(scalar_name, prefix, ty) in FLOATS.iter() {
+        for &(scalar_name, prefix, ty) in &FLOATS {
             let vec_name = format!("{}Vec{}", prefix.to_string().to_uppercase(), size);
             res.push(vector_type(&vec_name, scalar_name, ty, size));
 

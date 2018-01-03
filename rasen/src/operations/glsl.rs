@@ -1,10 +1,10 @@
 use spirv_headers::*;
+use spirv_headers::GLOp::*;
 use rspirv::mr::{
     Instruction, Operand
 };
 
 use builder::Builder;
-use glsl::GLSL::*;
 use types::*;
 use errors::*;
 
@@ -288,5 +288,56 @@ pub fn refract(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Resu
             Ok((l_type, res_id))
         },
         _ => Err(ErrorKind::BadArguments(Box::new([ l_type, r_type, i_type ])))?,
+    }
+}
+
+#[inline]
+pub fn sample(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
+    use types::TypeName::*;
+
+    if args.len() != 2 {
+        Err(ErrorKind::WrongArgumentsCount(args.len(), 2))?;
+    }
+
+    let (image_type, image_value) = args[0];
+    let (coords_type, coords_value) = args[1];
+
+    match (image_type, coords_type) {
+        (&Sampler(sampled_type, Dim::Dim1D), &Vec(1, coords_scalar)) |
+        (&Sampler(sampled_type, Dim::Dim2D), &Vec(2, coords_scalar)) |
+        (&Sampler(sampled_type, Dim::Dim3D), &Vec(3, coords_scalar)) |
+        (&Sampler(sampled_type, Dim::DimCube), &Vec(3, coords_scalar)) |
+        (&Sampler(sampled_type, Dim::DimRect), &Vec(2, coords_scalar)) |
+        (&Sampler(sampled_type, Dim::DimBuffer), &Vec(1, coords_scalar)) |
+
+        (&Sampler(sampled_type, Dim::DimBuffer), coords_scalar) |
+        (&Sampler(sampled_type, Dim::Dim1D), coords_scalar) if sampled_type.is_num() && coords_scalar.is_float() => {
+            let res_type = match *sampled_type {
+                Int(true) => TypeName::IVEC4,
+                Int(false) => TypeName::UVEC4,
+                Float(false) => TypeName::VEC4,
+                Float(true) => TypeName::DVEC4,
+                _ => unreachable!(),
+            };
+
+            let vec_type = builder.register_type(res_type);
+            let res_id = builder.get_id();
+
+            builder.push_instruction(
+                Instruction::new(
+                    Op::ImageSampleImplicitLod,
+                    Some(vec_type),
+                    Some(res_id),
+                    vec![
+                        Operand::IdRef(image_value),
+                        Operand::IdRef(coords_value)
+                    ]
+                )
+            );
+
+            Ok((res_type, res_id))
+        },
+        
+        _ => Err(ErrorKind::BadArguments(Box::new([ image_type, coords_type ])))?,
     }
 }

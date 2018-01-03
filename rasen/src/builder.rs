@@ -1,5 +1,4 @@
 use std::mem;
-use std::slice;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -34,9 +33,9 @@ impl CachedConstant {
         let sign = bits >> 63 == 0;
         let mut exponent: i16 = ((bits >> 52) & 0x7ff) as i16;
         let mantissa = if exponent == 0 {
-            (bits & 0xfffffffffffff) << 1
+            (bits & 0xf_ffff_ffff_ffff) << 1
         } else {
-            (bits & 0xfffffffffffff) | 0x10000000000000
+            (bits & 0xf_ffff_ffff_ffff) | 0x10_0000_0000_0000
         };
 
         exponent -= 1023 + 52;
@@ -49,9 +48,9 @@ impl CachedConstant {
         let sign = bits >> 31 == 0;
         let mut exponent: i16 = ((bits >> 23) & 0xff) as i16;
         let mantissa = if exponent == 0 {
-            (bits & 0x7fffff) << 1
+            (bits & 0x7f_ffff) << 1
         } else {
-            (bits & 0x7fffff) | 0x800000
+            (bits & 0x7f_ffff) | 0x80_0000
         };
 
         exponent -= 127 + 23;
@@ -60,33 +59,30 @@ impl CachedConstant {
 }
 
 /// Builds the dependency graph for a list of Instructions and perform a topological sort
-fn sort_instructions(unsorted: Vec<Instruction>) -> Result<Vec<Instruction>> {
+fn sort_instructions(unsorted: &[Instruction]) -> Result<Vec<Instruction>> {
     let mut decl_graph = PetGraph::new();
 
     let mut node_map = HashMap::new();
-    for inst in unsorted.iter() {
+    for inst in unsorted {
         let index = decl_graph.add_node(inst);
         if let Some(id) = inst.result_id {
             node_map.insert(id, index);
         }
     }
 
-    for inst in unsorted.iter() {
+    for inst in unsorted {
         if let Some(id) = inst.result_id {
-            let self_node = node_map.get(&id).unwrap();
+            let self_node = &node_map[&id];
 
             if let Some(id) = inst.result_type {
-                let other = node_map.get(&id).unwrap();
+                let other = &node_map[&id];
                 decl_graph.add_edge(*other, *self_node, ());
             }
 
-            for op in inst.operands.iter() {
-                match op {
-                    &Operand::IdRef(ref id) => {
-                        let other = node_map.get(id).unwrap();
-                        decl_graph.add_edge(*other, *self_node, ());
-                    },
-                    _ => {},
+            for op in &inst.operands {
+                if let Operand::IdRef(ref id) = *op {
+                    let other = &node_map[id];
+                    decl_graph.add_edge(*other, *self_node, ());
                 }
             }
         }
@@ -103,11 +99,13 @@ fn sort_instructions(unsorted: Vec<Instruction>) -> Result<Vec<Instruction>> {
                         result_type: inst.result_type,
                         result_id: inst.result_id,
                         operands: inst.operands.iter()
-                            .map(|op| match op {
-                                &Operand::IdRef(id) => Operand::IdRef(id),
-                                &Operand::LiteralInt32(val) => Operand::LiteralInt32(val),
-                                &Operand::LiteralFloat32(val) => Operand::LiteralFloat32(val),
-                                &Operand::StorageClass(output) => Operand::StorageClass(output),
+                            .map(|op| match *op {
+                                Operand::IdRef(id) => Operand::IdRef(id),
+                                Operand::LiteralInt32(val) => Operand::LiteralInt32(val),
+                                Operand::LiteralFloat32(val) => Operand::LiteralFloat32(val),
+                                Operand::StorageClass(output) => Operand::StorageClass(output),
+                                Operand::Dim(dim) => Operand::Dim(dim),
+                                Operand::ImageFormat(format) => Operand::ImageFormat(format),
                                 _ => panic!("unimplemented Operand::{:?}", op),
                             })
                             .collect(),
@@ -432,6 +430,41 @@ impl Builder {
 
                 mat_id
             },
+            TypeName::Sampler(sampled_type, dimensionality) => {
+                let sample_id = self.register_type(sampled_type);
+                let image_id = self.get_id();
+                let sampler_id = self.get_id();
+
+                self.module.types_global_values.push(
+                    Instruction::new(
+                        Op::TypeImage,
+                        None,
+                        Some(image_id),
+                        vec![
+                            Operand::IdRef(sample_id),
+                            Operand::Dim(dimensionality),
+                            Operand::LiteralInt32(0),
+                            Operand::LiteralInt32(0),
+                            Operand::LiteralInt32(0),
+                            Operand::LiteralInt32(1),
+                            Operand::ImageFormat(ImageFormat::Unknown),
+                        ]
+                    )
+                );
+
+                self.module.types_global_values.push(
+                    Instruction::new(
+                        Op::TypeSampledImage,
+                        None,
+                        Some(sampler_id),
+                        vec![
+                            Operand::IdRef(image_id),
+                        ]
+                    )
+                );
+
+                sampler_id
+            },
         };
 
         self.types.insert(type_id, res_id);
@@ -489,14 +522,19 @@ impl Builder {
             return Ok(*res);
         }
 
-        let args: Result<Vec<_>> =
+        let args: Result<Vec<_>> = {
             graph.arguments(index)
                 .map(|edge| self.visit(graph, edge))
-                .collect();
+                .collect()
+        };
 
         let node = &graph[index];
-        let res = node.get_result(self, args?)
-            .chain_err(|| ErrorKind::BuildError(node.to_string(), index.index()))?;
+        let res = {
+            node.get_result(self, args?)
+                .chain_err(|| {
+                    ErrorKind::BuildError(node.to_string(), index.index())
+                })?
+        };
 
         self.results.insert(index, res);
         Ok(res)
@@ -504,10 +542,11 @@ impl Builder {
 
     /// Build the module, returning a list of instructions
     pub fn finalize(mut self) -> Result<Module> {
-        let mut uniforms: Vec<(Word, Word, &'static TypeName)> =
+        let mut uniforms: Vec<(Word, Word, &'static TypeName)> = {
             self.uniforms.iter()
                 .map(|(k, &(a, b))| (*k, a, b))
-                .collect();
+                .collect()
+        };
 
         uniforms.sort_by_key(|&(k, _, _)| k);
 
@@ -516,7 +555,7 @@ impl Builder {
                 ModuleHeader {
                     magic_number: MAGIC_NUMBER,
                     version: (MAJOR_VERSION << 16) | (MAJOR_VERSION << 8),
-                    generator: 0x00100008,
+                    generator: 0xffff_0009,
                     bound: self.bound(),
                     reserved_word: 0,
                 },
@@ -601,7 +640,7 @@ impl Builder {
 
                 // Declarations
                 declarations.append(&mut self.module.types_global_values);
-                sort_instructions(declarations)?
+                sort_instructions(&declarations)?
             },
 
             // Functions
@@ -659,13 +698,17 @@ impl Builder {
 
     /// Get the instructions of the module in binary form
     pub fn into_bytecode(self) -> Result<Vec<u8>> {
-        let res = self.finalize()?.assemble();
-        let res = res.as_slice();
-        Ok(Vec::from(unsafe {
-            slice::from_raw_parts(
-                mem::transmute(res.as_ptr()),
-                res.len() * 4
+        let mut res = self.finalize()?.assemble();
+        let ptr = res.as_mut_ptr();
+        let len = res.len().checked_mul(4).ok_or("Integer overflow")?;
+        let cap = res.capacity().checked_mul(4).ok_or("Integer overflow")?;
+
+        Ok(unsafe {
+            mem::forget(res);
+            Vec::from_raw_parts(
+                mem::transmute(ptr),
+                len, cap,
             )
-        }))
+        })
     }
 }

@@ -123,239 +123,243 @@ fn type_values(ty: &str) -> (Ident, Ident) {
     }
 }
 
+fn type_scalar(name: &Ident, ty: &'static str) -> Tokens {
+    let mut traits = vec![
+        trait_scalar(name.clone(), Ident::from(ty), type_values(ty)),
+    ];
+
+    match ty {
+        "bool" => {},
+
+        "i32" | "u32" => {
+            traits.push(trait_numerical(name.clone(), Ident::from("pow"), Ident::from("u32")));
+            traits.push(trait_integer(name.clone(), ty == "i32"));
+        },
+
+        "f32" | "f64" => {
+            traits.push(trait_numerical(name.clone(), Ident::from("powf"), Ident::from(ty)));
+            traits.push(trait_float(name.clone(), ty == "f64"));
+        },
+
+        _ => unreachable!(),
+    }
+
+    let ty = Ident::from(ty);
+    quote! {
+        pub type #name = #ty;
+        #( #traits )*
+
+        impl Into<Value<#name>> for #name {
+            fn into(self) -> Value<#name> {
+                Value::Concrete(self)
+            }
+        }
+        impl<'a> Into<Value<#name>> for &'a #name {
+            fn into(self) -> Value<#name> {
+                Value::Concrete(*self)
+            }
+        }
+
+        impl IntoValue for #name {
+            type Output = #name;
+
+            fn get_concrete(&self) -> Option<Self::Output> {
+                Some(*self)
+            }
+
+            fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
+                let mut graph = graph.borrow_mut();
+                graph.add_node(Node::Constant(TypedValue::#name(*self)))
+            }
+        }
+    }
+}
+
+fn type_vector(name: &Ident, ty: &'static str, component: Option<Box<Type>>, size: Option<u32>) -> Tokens {
+    let component = component.unwrap();
+    let size = size.unwrap();
+
+    let traits = vec![
+        trait_vector(name.clone(), size, component.name.clone(), type_values(ty))
+    ];
+
+    let ty = Ident::from(ty);
+    let types = (0..size).map(|_| ty.clone());
+
+    let fields = (0..size).map(|i| {
+        let id = Ident::from(format!("{}", i));
+        quote! { self.#id }
+    });
+
+    let into_idx: Vec<_> = {
+        (0..size)
+        .map(|i| {
+            let index = i as usize;
+            quote! { arr[#index] }
+        })
+        .collect()
+    };
+
+    let index_arms = (0..size).map(|i| {
+        let index = Ident::from(format!("{}", i));
+        quote! { #i => &self.#index }
+    });
+
+    let lower = Ident::from(name.as_ref().to_lowercase());
+    let upper = Ident::from(name.as_ref().to_uppercase());
+    let indices: Vec<u32> = (0..size).collect();
+    let generics: Vec<_> = (0..size).map(|i| Ident::from(format!("T{}", i))).collect();
+    let args1: Vec<_> = generics.iter().map(|gen| Ident::from(gen.as_ref().to_lowercase())).collect();
+    let args2 = args1.clone();
+    let args3 = args1.clone();
+    let args4 = args1.clone();
+    let sources1: Vec<_> = args1.iter().map(|ident| Ident::from(format!("{}_src", ident))).collect();
+    let sources2 = sources1.clone();
+    let arg_list: Vec<_> = generics.iter()
+        .zip(args1.iter())
+        .map(|(gen, name)| quote! { #name: #gen })
+        .collect();
+    let constraints: Vec<_> = generics.iter()
+        .map(|gen| {
+            let comp = component.name.clone();
+            quote! { #gen: IntoValue<Output=#comp> }
+        })
+        .collect();
+
+    let graph_opt = args1.iter()
+        .fold(None, |curr, arg| match curr {
+            Some(tokens) => Some(quote! { #tokens.or(#arg.get_graph()) }),
+            None => Some(quote! { #arg.get_graph() }),
+        })
+        .unwrap();
+
+    quote! {
+        #[derive(Copy, Clone, Debug)]
+        pub struct #name( #( pub #types ),* );
+        #( #traits )*
+
+        impl From<Vec<#ty>> for #name {
+            fn from(arr: Vec<#ty>) -> #name {
+                #name( #( #into_idx ),* )
+            }
+        }
+
+        impl Index<u32> for #name {
+            type Output = #ty;
+            fn index(&self, index: u32) -> &Self::Output {
+                match index {
+                    #( #index_arms, )*
+                    _ => unreachable!(),
+                }
+            }
+        }
+
+        impl Into<Value<#name>> for #name {
+            fn into(self) -> Value<#name> {
+                Value::Concrete(self)
+            }
+        }
+
+        impl IntoValue for #name {
+            type Output = #name;
+
+            fn get_concrete(&self) -> Option<Self::Output> {
+                Some(*self)
+            }
+
+            fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
+                let mut graph = graph.borrow_mut();
+                graph.add_node(Node::Constant(TypedValue::#name( #( #fields ),* )))
+            }
+        }
+
+        #[inline]
+        pub fn #lower< #( #generics ),* >( #( #arg_list ),* ) -> Value<#name> where #( #constraints ),* {
+            if let ( #( Some(#args1) ),* ) = ( #( #args2.get_concrete() ),* ) {
+                return Value::Concrete(#name( #( #args3 ),* ));
+            }
+
+            let graph_opt = #graph_opt;
+            if let Some(graph_ref) = graph_opt {
+                #( let #sources1 = #args4.get_index(graph_ref.clone()); )*
+
+                let index = {
+                    let mut graph = graph_ref.borrow_mut();
+                    let index = graph.add_node(Node::Construct(TypeName::#upper));
+                    #( graph.add_edge(#sources2, index, #indices); )*
+                    index
+                };
+
+                return Value::Abstract {
+                    graph: graph_ref.clone(),
+                    index,
+                    ty: PhantomData,
+                };
+            }
+
+            unreachable!()
+        }
+    }
+}
+
+fn type_matrix(name: &Ident, ty: &'static str, component: Option<Box<Type>>, size: Option<u32>) -> Tokens {
+    let vector = component.unwrap();
+    let scalar = vector.clone().component.unwrap();
+    let size = size.unwrap();
+
+    let traits = vec![
+        trait_matrix(name.clone(), size, vector.name.clone(), scalar.name.clone(), type_values(ty))
+    ];
+
+    let ty = Ident::from(ty);
+    let mat_size = (size * size) as usize;
+    quote! {
+        #[derive(Copy, Clone, Debug)]
+        pub struct #name(pub [ #ty ; #mat_size ]);
+        #( #traits )*
+
+        impl Into<Value<#name>> for [ #ty ; #mat_size ] {
+            fn into(self) -> Value<#name> {
+                Value::Concrete(#name(self))
+            }
+        }
+
+        impl Into<Value<#name>> for #name {
+            fn into(self) -> Value<#name> {
+                Value::Concrete(self)
+            }
+        }
+
+        impl Index<u32> for #name {
+            type Output = #ty;
+            fn index(&self, index: u32) -> &Self::Output {
+                &self.0[index as usize]
+            }
+        }
+
+        impl IntoValue for #name {
+            type Output = #name;
+
+            fn get_concrete(&self) -> Option<Self::Output> {
+                Some(*self)
+            }
+
+            fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
+                let mut graph = graph.borrow_mut();
+                graph.add_node(Node::Constant(TypedValue::#name(self.0)))
+            }
+        }
+    }
+}
+
 pub fn type_structs() -> Vec<Tokens> {
     all_types().iter()
         .filter_map(|ty| {
             let Type { name, category, ty, component, size, .. } = ty.clone();
             let decl = match category {
-                Category::SCALAR => {
-                    let mut traits = vec![
-                        trait_scalar(name.clone(), Ident::from(ty), type_values(ty)),
-                    ];
-
-                    match ty {
-                        "bool" => {},
-
-                        "i32" | "u32" => {
-                            traits.push(trait_numerical(name.clone(), Ident::from("pow"), Ident::from("u32")));
-                            traits.push(trait_integer(name.clone(), ty == "i32"));
-                        },
-
-                        "f32" | "f64" => {
-                            traits.push(trait_numerical(name.clone(), Ident::from("powf"), Ident::from(ty)));
-                            traits.push(trait_float(name.clone(), ty == "f64"));
-                        },
-
-                        _ => unreachable!(),
-                    }
-
-                    let ty = Ident::from(ty);
-                    quote! {
-                        pub type #name = #ty;
-                        #( #traits )*
-
-                        impl Into<Value<#name>> for #name {
-                            fn into(self) -> Value<#name> {
-                                Value::Concrete(self)
-                            }
-                        }
-                        impl<'a> Into<Value<#name>> for &'a #name {
-                            fn into(self) -> Value<#name> {
-                                Value::Concrete(*self)
-                            }
-                        }
-
-                        impl IntoValue for #name {
-                            type Output = #name;
-
-                            fn get_concrete(&self) -> Option<Self::Output> {
-                                Some(*self)
-                            }
-
-                            fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
-                                let mut graph = graph.borrow_mut();
-                                graph.add_node(Node::Constant(TypedValue::#name(*self)))
-                            }
-                        }
-                    }
-                },
-
-                Category::VECTOR => {
-                    let component = component.unwrap();
-                    let size = size.unwrap();
-
-                    let traits = vec![
-                        trait_vector(name.clone(), size, component.name.clone(), type_values(ty))
-                    ];
-
-                    let ty = Ident::from(ty);
-                    let types = (0..size).map(|_| ty.clone());
-
-                    let fields = (0..size).map(|i| {
-                        let id = Ident::from(format!("{}", i));
-                        quote! { self.#id }
-                    });
-
-                    let into_idx: Vec<_> = {
-                        (0..size)
-                        .map(|i| {
-                            let index = i as usize;
-                            quote! { arr[#index] }
-                        })
-                        .collect()
-                    };
-
-                    let index_arms = (0..size).map(|i| {
-                        let index = Ident::from(format!("{}", i));
-                        quote! { #i => &self.#index }
-                    });
-
-                    let lower = Ident::from(name.as_ref().to_lowercase());
-                    let upper = Ident::from(name.as_ref().to_uppercase());
-                    let indices: Vec<u32> = (0..size).collect();
-                    let generics: Vec<_> = (0..size).map(|i| Ident::from(format!("T{}", i))).collect();
-                    let args1: Vec<_> = generics.iter().map(|gen| Ident::from(gen.as_ref().to_lowercase())).collect();
-                    let args2 = args1.clone();
-                    let args3 = args1.clone();
-                    let args4 = args1.clone();
-                    let sources1: Vec<_> = args1.iter().map(|ident| Ident::from(format!("{}_src", ident))).collect();
-                    let sources2 = sources1.clone();
-                    let arg_list: Vec<_> = generics.iter()
-                        .zip(args1.iter())
-                        .map(|(gen, name)| quote! { #name: #gen })
-                        .collect();
-                    let constraints: Vec<_> = generics.iter()
-                        .map(|gen| {
-                            let comp = component.name.clone();
-                            quote! { #gen: IntoValue<Output=#comp> }
-                        })
-                        .collect();
-
-                    let graph_opt = args1.iter()
-                        .fold(None, |curr, arg| match curr {
-                            Some(tokens) => Some(quote! { #tokens.or(#arg.get_graph()) }),
-                            None => Some(quote! { #arg.get_graph() }),
-                        })
-                        .unwrap();
-
-                    quote! {
-                        #[derive(Copy, Clone, Debug)]
-                        pub struct #name( #( pub #types ),* );
-                        #( #traits )*
-
-                        impl From<Vec<#ty>> for #name {
-                            fn from(arr: Vec<#ty>) -> #name {
-                                #name( #( #into_idx ),* )
-                            }
-                        }
-
-                        impl Index<u32> for #name {
-                            type Output = #ty;
-                            fn index(&self, index: u32) -> &Self::Output {
-                                match index {
-                                    #( #index_arms, )*
-                                    _ => unreachable!(),
-                                }
-                            }
-                        }
-
-                        impl Into<Value<#name>> for #name {
-                            fn into(self) -> Value<#name> {
-                                Value::Concrete(self)
-                            }
-                        }
-
-                        impl IntoValue for #name {
-                            type Output = #name;
-
-                            fn get_concrete(&self) -> Option<Self::Output> {
-                                Some(*self)
-                            }
-
-                            fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
-                                let mut graph = graph.borrow_mut();
-                                graph.add_node(Node::Constant(TypedValue::#name( #( #fields ),* )))
-                            }
-                        }
-
-                        #[inline]
-                        pub fn #lower< #( #generics ),* >( #( #arg_list ),* ) -> Value<#name> where #( #constraints ),* {
-                            if let ( #( Some(#args1) ),* ) = ( #( #args2.get_concrete() ),* ) {
-                                return Value::Concrete(#name( #( #args3 ),* ));
-                            }
-
-                            let graph_opt = #graph_opt;
-                            if let Some(graph_ref) = graph_opt {
-                                #( let #sources1 = #args4.get_index(graph_ref.clone()); )*
-
-                                let index = {
-                                    let mut graph = graph_ref.borrow_mut();
-                                    let index = graph.add_node(Node::Construct(TypeName::#upper));
-                                    #( graph.add_edge(#sources2, index, #indices); )*
-                                    index
-                                };
-
-                                return Value::Abstract {
-                                    graph: graph_ref.clone(),
-                                    index,
-                                    ty: PhantomData,
-                                };
-                            }
-
-                            unreachable!()
-                        }
-                    }
-                },
-
-                Category::MATRIX => {
-                    let vector = component.unwrap();
-                    let scalar = vector.clone().component.unwrap();
-                    let size = size.unwrap();
-
-                    let traits = vec![
-                        trait_matrix(name.clone(), size, vector.name.clone(), scalar.name.clone(), type_values(ty))
-                    ];
-
-                    let ty = Ident::from(ty);
-                    let mat_size = (size * size) as usize;
-                    quote! {
-                        #[derive(Copy, Clone, Debug)]
-                        pub struct #name(pub [ #ty ; #mat_size ]);
-                        #( #traits )*
-
-                        impl Into<Value<#name>> for [ #ty ; #mat_size ] {
-                            fn into(self) -> Value<#name> {
-                                Value::Concrete(#name(self))
-                            }
-                        }
-
-                        impl Into<Value<#name>> for #name {
-                            fn into(self) -> Value<#name> {
-                                Value::Concrete(self)
-                            }
-                        }
-
-                        impl Index<u32> for #name {
-                            type Output = #ty;
-                            fn index(&self, index: u32) -> &Self::Output {
-                                &self.0[index as usize]
-                            }
-                        }
-
-                        impl IntoValue for #name {
-                            type Output = #name;
-
-                            fn get_concrete(&self) -> Option<Self::Output> {
-                                Some(*self)
-                            }
-
-                            fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
-                                let mut graph = graph.borrow_mut();
-                                graph.add_node(Node::Constant(TypedValue::#name(self.0)))
-                            }
-                        }
-                    }
-                },
+                Category::SCALAR => type_scalar(&name, ty),
+                Category::VECTOR => type_vector(&name, ty, component, size),
+                Category::MATRIX => type_matrix(&name, ty, component, size),
             };
 
             let upper = Ident::from(

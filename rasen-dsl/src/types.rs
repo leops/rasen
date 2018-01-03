@@ -14,7 +14,7 @@ pub mod traits {
 
     pub trait ValueIter<T> {
         type Iter: Iterator<Item=Value<T>>;
-        fn iter<'a>(obj: &Self) -> Self::Iter;
+        fn iter(obj: &Self) -> Self::Iter;
     }
 
     pub trait Scalar: 'static + Copy + IntoValue<Output=Self> + Into<Value<Self>> + ValueIter<Self> + PartialOrd + PartialEq {
@@ -54,4 +54,38 @@ pub mod traits {
 }
 
 use self::traits::*;
+
+#[derive(Copy, Clone)]
+pub struct Sampler(pub Vec4);
+
+impl IntoValue for Sampler {
+    type Output = Self;
+
+    /// Gets the concrete value of this value, if it is indeed concrete
+    fn get_concrete(&self) -> Option<Self::Output> {
+        Some(*self)
+    }
+
+    /// Registers this value into a Graph and returns the node index
+    fn get_index(&self, _graph: GraphRef) -> NodeIndex<u32> {
+        unimplemented!()
+    }
+}
+
+impl Uniform<Sampler> for Shader {
+    #[inline]
+    fn uniform(&self, location: u32) -> Value<Sampler> {
+        let index = {
+            let mut graph = self.graph.borrow_mut();
+            graph.add_node(Node::Uniform(location, TypeName::SAMPLER2D))
+        };
+
+        Value::Abstract {
+            graph: self.graph.clone(),
+            index,
+            ty: PhantomData,
+        }
+    }
+}
+
 include!(concat!(env!("OUT_DIR"), "/types.rs"));

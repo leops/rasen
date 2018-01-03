@@ -56,6 +56,8 @@
 //! ```
 
 #![feature(plugin_registrar, rustc_private, custom_attribute, box_syntax, i128_type)]
+#![cfg_attr(feature="clippy", feature(plugin))]
+#![cfg_attr(feature="clippy", plugin(clippy))]
 
 extern crate rustc_plugin;
 extern crate syntax;
@@ -102,8 +104,8 @@ fn insert_shader_wrapper(ecx: &mut ExtCtxt, _span: Span, _meta_item: &MetaItem, 
                     })
             };
 
-            let (output, outputs) = match output {
-                &FunctionRetTy::Ty(ref ty) => match ty.node {
+            let (output, outputs) = match *output {
+                FunctionRetTy::Ty(ref ty) => match ty.node {
                     TyKind::Tup(ref fields) => {
                         let list: Vec<_> = {
                             (0..fields.len())
@@ -379,13 +381,15 @@ const COMPOSITE_MACROS: &[CompositeMacro<'static>] = &[
 pub fn plugin_registrar(reg: &mut Registry) {
     reg.register_macro("idx", idx_macro);
 
-    for cmp_macro in COMPOSITE_MACROS.into_iter() {
+    for cmp_macro in COMPOSITE_MACROS {
         reg.register_syntax_extension(
             Symbol::intern(cmp_macro.func),
-            SyntaxExtension::NormalTT(
-                box cmp_macro.clone(),
-                None, false,
-            ),
+            SyntaxExtension::NormalTT {
+                expander: box cmp_macro.clone(),
+                allow_internal_unsafe: false,
+                allow_internal_unstable: false,
+                def_info: None,
+            },
         );
     }
 

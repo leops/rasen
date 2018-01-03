@@ -1,5 +1,7 @@
 #![recursion_limit = "128"]
 #![feature(inclusive_range_syntax)]
+#![cfg_attr(feature="clippy", feature(plugin))]
+#![cfg_attr(feature="clippy", plugin(clippy))]
 
 #[macro_use]
 extern crate quote;
@@ -19,7 +21,7 @@ const FLOATS: [(&'static str, &'static str, &'static str); 2] = [
     ("Double", "d", "f64"),
 ];
 
-fn types(out_dir: &String) {
+fn types(out_dir: &str) {
     let builder = quote::Ident::from("$builder");
     let constant = quote::Ident::from("$constant");
 
@@ -121,7 +123,7 @@ fn types(out_dir: &String) {
         });
     }
 
-    for size in 2u32...4u32 {
+    for size in 2u32..=4u32 {
         for &(name, prefix, ty) in INTS.iter().chain(FLOATS.iter()) {
             let type_variant = format!("{}Vec{}", prefix.to_string().to_uppercase(), size);
             let const_name = quote::Ident::from(type_variant.to_uppercase());
@@ -181,7 +183,7 @@ fn types(out_dir: &String) {
             });
         }
 
-        for &(_, prefix, ty) in FLOATS.iter() {
+        for &(_, prefix, ty) in &FLOATS {
             let ty = quote::Ident::from(ty);
             let const_ty = quote::Ident::from(format!("{}VEC{}", prefix.to_string().to_uppercase(), size));
 
@@ -265,7 +267,7 @@ fn types(out_dir: &String) {
     ).unwrap();
 }
 
-const NODES: [(&'static str, &'static str, &'static str); 23] = [(
+const NODES: [(&'static str, &'static str, &'static str); 24] = [(
     "Normalize",
     "Normalize a vector",
     "Takes a single parameter"
@@ -357,14 +359,18 @@ const NODES: [(&'static str, &'static str, &'static str); 23] = [(
     "Mix",
     "Computes a linear interpolation between two values",
     "Takes 3 parameters"
+), (
+    "Sample",
+    "Samples a texture usinga coordinates vector",
+    "Takes 2 parameters: the texture sampler and the coordinates"
 )];
 
-fn nodes(out_dir: &String) {
+fn nodes(out_dir: &str) {
     let mut node_variants = Vec::new();
     let mut to_string_arms = Vec::new();
     let mut from_string_arms = Vec::new();
 
-    for &(name, desc, params) in NODES.iter() {
+    for &(name, desc, params) in &NODES {
         let ident = quote::Ident::from(name.to_string());
         node_variants.push(quote! {
             #[doc = #desc]

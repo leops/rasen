@@ -1,4 +1,5 @@
 use std::fmt;
+use spirv_headers::Dim;
 
 /// Describes a SPIR-V data type
 #[derive(Eq, PartialEq, Hash)]
@@ -13,6 +14,8 @@ pub enum TypeName {
     Vec(u32 /* component_count */, &'static TypeName /* component_type */),
     /// Matrix type of n columns of given vector type
     Mat(u32 /* column_count */, &'static TypeName /* column_type */),
+    /// Composite type of an image and an actual sampler object
+    Sampler(&'static TypeName /* sampled_type */, Dim /* dimensionality */),
 }
 
 include!(concat!(env!("OUT_DIR"), "/types.rs"));
@@ -23,6 +26,8 @@ impl TypeName {
     pub const UINT: &'static TypeName = &TypeName::Int(false);
     pub const FLOAT: &'static TypeName = &TypeName::Float(false);
     pub const DOUBLE: &'static TypeName = &TypeName::Float(true);
+
+    pub const SAMPLER2D: &'static TypeName = &TypeName::Sampler(TypeName::FLOAT, Dim::Dim2D);
 
     #[inline]
     pub fn is_bool(&self) -> bool {
@@ -67,6 +72,8 @@ impl TypeName {
     #[inline]
     pub fn size(&self) -> u32 {
         match *self {
+            TypeName::Sampler(_, _) => 0,
+
             TypeName::Bool |
             TypeName::Int(_) |
             TypeName::Float(false) => 4,
@@ -79,6 +86,17 @@ impl TypeName {
     }
 }
 
+fn print_type_prefix(f: &mut fmt::Formatter, ty: &TypeName) -> fmt::Result {
+    match *ty {
+        TypeName::Bool => write!(f, "b"),
+        TypeName::Int(true) => write!(f, "i"),
+        TypeName::Int(false) => write!(f, "u"),
+        TypeName::Float(false) => write!(f, "v"),
+        TypeName::Float(true) => write!(f, "d"),
+        _ => Err(fmt::Error),
+    }
+}
+
 impl fmt::Debug for TypeName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -88,19 +106,29 @@ impl fmt::Debug for TypeName {
             TypeName::Float(false) => write!(f, "float"),
             TypeName::Float(true) => write!(f, "double"),
 
-            TypeName::Vec(len, scalar) => match *scalar {
-                TypeName::Bool => write!(f, "bvec{}", len),
-                TypeName::Int(true) => write!(f, "ivec{}", len),
-                TypeName::Int(false) => write!(f, "uvec{}", len),
-                TypeName::Float(false) => write!(f, "vec{}", len),
-                TypeName::Float(true) => write!(f, "dvec{}", len),
-                _ => Err(fmt::Error),
+            TypeName::Vec(len, scalar) => {
+                print_type_prefix(f, scalar)?;
+                write!(f, "vec{}", len)
             },
 
             TypeName::Mat(columns, vec) => match *vec {
                 TypeName::Vec(rows, &TypeName::Float(false)) if columns == rows => write!(f, "mat{}", rows),
                 TypeName::Vec(rows, &TypeName::Float(true)) if columns == rows => write!(f, "dmat{}", rows),
                 _ => Err(fmt::Error),
+            },
+
+            TypeName::Sampler(sampled_type, dimensionality) => {
+                print_type_prefix(f, sampled_type)?;
+                write!(f, "sampler")?;
+                match dimensionality {
+                    Dim::Dim1D => write!(f, "1D"),
+                    Dim::Dim2D => write!(f, "2D"),
+                    Dim::Dim3D => write!(f, "3D"),
+                    Dim::DimCube => write!(f, "Cube"),
+                    Dim::DimRect => write!(f, "2DRect"),
+                    Dim::DimBuffer => write!(f, "Buffer"),
+                    Dim::DimSubpassData => write!(f, "SubpassData"),
+                }
             },
         }
     }

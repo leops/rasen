@@ -11,10 +11,10 @@ pub fn basic_vert(a_pos: Value<Vec3>, a_normal: Value<Vec3>, a_uv: Value<Vec2>, 
 }
 
 #[shader]
-pub fn basic_frag(a_input: Value<Vec3>) -> Value<Vec4> {
-    let normal = normalize(a_input);
+pub fn basic_frag(a_normal: Value<Vec3>, a_uv: Value<Vec2>, material: Value<Sampler>) -> Value<Vec4> {
+    let normal = normalize(a_normal);
     let light = vec3(0.3f32, -0.5f32, 0.2f32);
-    let color = vec4(0.25f32, 0.625f32, 1.0f32, 1.0f32);
+    let color = sample(material, a_uv);
 
     clamp(dot(normal, light), 0.1f32, 1.0f32) * color
 }

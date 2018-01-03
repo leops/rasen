@@ -56,6 +56,7 @@ fn impl_vector_times_matrix(result: Ident, size: u32, vector: Tokens, matrix: To
     }
 }
 
+#[cfg_attr(feature="clippy", allow(match_same_arms))]
 pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
     let left_res = left_type.result.clone();
     let right_res = right_type.result.clone();
@@ -118,7 +119,7 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
             }
         ),
 
-        (Category::VECTOR, lt, rc, rt) if lt == rt && left_res.size.unwrap() == right_res.size.unwrap_or(left_res.size.unwrap()) => (
+        (Category::VECTOR, lt, rc, rt) if lt == rt && left_res.size.unwrap() == right_res.size.or(left_res.size).unwrap() => (
             left_res.name.clone(),
             match rc {
                 Category::VECTOR => unreachable!(),
@@ -138,7 +139,7 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                 ),
             }
         ),
-        (lc, lt, Category::VECTOR, rt) if lt == rt && right_res.size.unwrap() == left_res.size.unwrap_or(right_res.size.unwrap()) => (
+        (lc, lt, Category::VECTOR, rt) if lt == rt && right_res.size.unwrap() == left_res.size.or(right_res.size).unwrap() => (
             right_res.name.clone(),
             match lc {
                 Category::VECTOR => unreachable!(),
