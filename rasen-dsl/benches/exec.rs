@@ -15,7 +15,13 @@ use data::*;
 #[bench]
 fn bench_run_basic_frag(b: &mut Bencher) {
     b.iter(|| {
-        basic_frag(vec3(0.0f32, 1.0f32, 0.0f32));
+        basic_frag(
+            vec3(0.0f32, 1.0f32, 0.0f32),
+            vec2(0.0f32, 0.0f32),
+            Value::Concrete(Sampler(
+                Vec4(0.25f32, 0.625f32, 1.0f32, 1.0f32),
+            )),
+        );
     });
 }
 
