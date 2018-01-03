@@ -70,7 +70,7 @@ fn main() {
 
 # DSL
 To reduce the amount of boilerplate, the `rasen_dsl` crate provides a bunch of utility function to write shaders as
-perfetly valid Rust code:
+perfectly valid Rust code:
 ```rust
 extern crate rasen;
 extern crate rasen_dsl;

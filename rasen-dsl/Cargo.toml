@@ -19,6 +19,3 @@ clippy = { version = "0.0.134", optional = true }
 syn = "0.11.11"
 quote = "0.3.15"
 clippy = { version = "0.0.134", optional = true }
-
-[dev-dependencies]
-rasen-plugin = { version = "0.1.0", path = "../rasen-plugin" }
