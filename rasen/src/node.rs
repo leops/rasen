@@ -21,7 +21,7 @@ impl Node {
         macro_rules! impl_glsl_call {
             ( $function:ident, $argc:expr ) => {{
                 if args.len() != $argc {
-                    Err(ErrorKind::WrongArgumentsCount(args.len(), $argc))?;
+                    bail!(ErrorKind::WrongArgumentsCount(args.len(), $argc));
                 }
 
                 let ext_id = module.import_set("GLSL.std.450");
@@ -59,12 +59,12 @@ impl Node {
         match *self {
             Node::Output(location, attr_type) => {
                 if args.len() != 1 {
-                    Err(ErrorKind::WrongArgumentsCount(args.len(), 1))?;
+                    bail!(ErrorKind::WrongArgumentsCount(args.len(), 1));
                 }
 
                 let (arg_type, arg_value) = args[0];
                 if arg_type != attr_type {
-                    Err(ErrorKind::BadArguments(Box::new([ arg_type ])))?;
+                    bail!(ErrorKind::BadArguments(box [ arg_type ]));
                 }
 
                 let type_id = module.register_type(attr_type);
@@ -247,14 +247,14 @@ impl Node {
                         match *output_type {
                             TypeName::Vec(size, data_type) => {
                                 if args.len() != size as usize {
-                                    Err(ErrorKind::WrongArgumentsCount(args.len(), size as usize))?;
+                                    bail!(ErrorKind::WrongArgumentsCount(args.len(), size as usize));
                                 }
 
                                 let res: Result<Vec<_>> =
                                     args.into_iter()
                                         .map(|(ty, val)| {
                                             if ty != data_type {
-                                                Err(ErrorKind::BadArguments(Box::new([ ty ])))?;
+                                                bail!(ErrorKind::BadArguments(box [ ty ]));
                                             }
 
                                             Ok(Operand::IdRef(val))
@@ -263,7 +263,7 @@ impl Node {
 
                                 res?
                             },
-                            _ => Err(ErrorKind::BadArguments(Box::new([ output_type ])))?,
+                            _ => bail!(ErrorKind::BadArguments(box [ output_type ])),
                         }
                     )
                 );
@@ -273,14 +273,14 @@ impl Node {
 
             Node::Extract(index) => {
                 if args.len() != 1 {
-                    Err(ErrorKind::WrongArgumentsCount(args.len(), 1))?;
+                    bail!(ErrorKind::WrongArgumentsCount(args.len(), 1));
                 }
 
                 let (arg_type, arg_value) = args[0];
                 match *arg_type {
                     TypeName::Vec(len, data_ty) => {
                         if index >= len {
-                            Err(ErrorKind::IndexOutOfBound(index, len))?;
+                            bail!(ErrorKind::IndexOutOfBound(index, len));
                         }
 
                         let type_id = module.register_type(data_ty);
@@ -300,7 +300,7 @@ impl Node {
 
                         Ok((data_ty, res_id))
                     },
-                    _ => Err(ErrorKind::BadArguments(Box::new([ arg_type ])))?,
+                    _ => bail!(ErrorKind::BadArguments(box [ arg_type ])),
                 }
             },
 

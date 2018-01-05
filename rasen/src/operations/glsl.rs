@@ -15,14 +15,14 @@ macro_rules! unary_vec {
             use types::TypeName::*;
 
             if args.len() != 1 {
-                Err(ErrorKind::WrongArgumentsCount(args.len(), 1))?;
+                bail!(ErrorKind::WrongArgumentsCount(args.len(), 1));
             }
 
             let (arg_ty, arg_val) = args[0];
             let (res_type, scalar) = if let Vec(_, scalar) = *arg_ty {
                 (builder.register_type(scalar), scalar)
             } else {
-                return Err(ErrorKind::BadArguments(Box::new([ arg_ty ])).into());
+                return Err(ErrorKind::BadArguments(box [ arg_ty ]).into());
             };
 
             let res_id = builder.get_id();
@@ -66,7 +66,7 @@ macro_rules! variadic_any {
                     $name(builder, args[0..n - 1].to_vec())?,
                     args[n - 1],
                 ),
-                n => Err(ErrorKind::WrongArgumentsCount(n, 2))?,
+                n => bail!(ErrorKind::WrongArgumentsCount(n, 2)),
             };
 
             let (l_type, l_value) = l_arg;
@@ -121,7 +121,7 @@ macro_rules! trinary_any {
             use types::TypeName::*;
 
             if args.len() != 3 {
-                Err(ErrorKind::WrongArgumentsCount(args.len(), 3))?;
+                bail!(ErrorKind::WrongArgumentsCount(args.len(), 3));
             }
 
             let (a_type, a_value) = args[0];
@@ -178,7 +178,7 @@ pub fn distance(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Res
     use types::TypeName::*;
 
     if args.len() != 2 {
-        Err(ErrorKind::WrongArgumentsCount(args.len(), 2))?;
+        bail!(ErrorKind::WrongArgumentsCount(args.len(), 2));
     }
 
     let (l_type, l_value) = args[0];
@@ -218,7 +218,7 @@ pub fn reflect(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Resu
     use types::TypeName::*;
 
     if args.len() != 2 {
-        Err(ErrorKind::WrongArgumentsCount(args.len(), 2))?;
+        bail!(ErrorKind::WrongArgumentsCount(args.len(), 2));
     }
 
     let (l_type, l_value) = args[0];
@@ -247,7 +247,7 @@ pub fn reflect(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Resu
 
             Ok((l_type, result_id))
         },
-        _ => Err(ErrorKind::BadArguments(Box::new([ l_type, r_type ])))?,
+        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type ])),
     }
 }
 
@@ -256,7 +256,7 @@ pub fn refract(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Resu
     use types::TypeName::*;
 
     if args.len() != 3 {
-        Err(ErrorKind::WrongArgumentsCount(args.len(), 3))?;
+        bail!(ErrorKind::WrongArgumentsCount(args.len(), 3));
     }
 
     let (l_type, l_value) = args[0];
@@ -287,7 +287,7 @@ pub fn refract(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Resu
 
             Ok((l_type, res_id))
         },
-        _ => Err(ErrorKind::BadArguments(Box::new([ l_type, r_type, i_type ])))?,
+        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type, i_type ])),
     }
 }
 
@@ -295,8 +295,8 @@ pub fn refract(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Resu
 pub fn sample(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
-    if args.len() != 2 {
-        Err(ErrorKind::WrongArgumentsCount(args.len(), 2))?;
+    if args.len() < 2 || args.len() > 3 {
+        bail!(ErrorKind::WrongArgumentsCount(args.len(), 2));
     }
 
     let (image_type, image_value) = args[0];
@@ -322,22 +322,36 @@ pub fn sample(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Resul
 
             let vec_type = builder.register_type(res_type);
             let res_id = builder.get_id();
+            let mut operands =  vec![
+                Operand::IdRef(image_value),
+                Operand::IdRef(coords_value),
+            ];
+
+            if let Some(&(bias_type, bias_value)) = args.get(2) {
+                if bias_type != TypeName::FLOAT {
+                    bail!(ErrorKind::BadArguments(box [ image_type, coords_type, bias_type ]));
+                }
+
+                operands.push(Operand::ImageOperands(ImageOperands::BIAS));
+                operands.push(Operand::IdRef(bias_value));
+            }
 
             builder.push_instruction(
                 Instruction::new(
                     Op::ImageSampleImplicitLod,
                     Some(vec_type),
                     Some(res_id),
-                    vec![
-                        Operand::IdRef(image_value),
-                        Operand::IdRef(coords_value)
-                    ]
+                    operands,
                 )
             );
 
             Ok((res_type, res_id))
         },
         
-        _ => Err(ErrorKind::BadArguments(Box::new([ image_type, coords_type ])))?,
+        _ => if let Some(&(bias_type, _)) = args.get(2) {
+            bail!(ErrorKind::BadArguments(box [ image_type, coords_type, bias_type ]))
+        } else {
+            bail!(ErrorKind::BadArguments(box [ image_type, coords_type ]))
+        },
     }
 }

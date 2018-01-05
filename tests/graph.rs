@@ -25,8 +25,8 @@ fn build_basic_vert() -> Graph {
     let norm_4 = graph.add_node(Node::Construct(TypeName::VEC4));
 
     let o_pos = graph.add_node(Node::Output(0, TypeName::VEC4));
-    let o_norm = graph.add_node(Node::Output(0, TypeName::VEC4));
-    let o_uv = graph.add_node(Node::Output(0, TypeName::VEC2));
+    let o_norm = graph.add_node(Node::Output(1, TypeName::VEC4));
+    let o_uv = graph.add_node(Node::Output(2, TypeName::VEC2));
 
     graph.add_edge(projection, vp, 0);
     graph.add_edge(view, vp, 1);

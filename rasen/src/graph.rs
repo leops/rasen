@@ -43,13 +43,11 @@ impl Graph {
     /// List all the outputs of the graph
     #[cfg_attr(feature="clippy", allow(needless_lifetimes))]
     pub fn outputs<'a>(&'a self) -> Box<Iterator<Item=NodeIndex<u32>> + 'a> {
-        Box::new(
-            self.graph.externals(Outgoing)
+        box self.graph.externals(Outgoing)
                 .filter(move |index| match self.graph.node_weight(*index) {
                     Some(&Node::Output(_, _)) => true,
                     _ => false,
                 })
-        )
     }
 
     /// List the incoming connections for a node
@@ -59,9 +57,7 @@ impl Graph {
 
         vec.sort_by_key(|e| e.weight());
 
-        Box::new(
-            vec.into_iter().map(|e| e.source())
-        )
+        box vec.into_iter().map(|e| e.source())
     }
 }
 

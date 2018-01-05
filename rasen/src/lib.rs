@@ -58,7 +58,7 @@
 //! directly into it.
 //!
 
-#![feature(conservative_impl_trait)]
+#![feature(box_syntax)]
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", warn(

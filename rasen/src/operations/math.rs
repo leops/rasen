@@ -84,7 +84,7 @@ pub fn multiply(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Res
             multiply(builder, &args[0..n - 1])?,
             args[n - 1],
         ),
-        n => Err(ErrorKind::WrongArgumentsCount(n, 2))?,
+        n => bail!(ErrorKind::WrongArgumentsCount(n, 2)),
     };
 
     let (l_type, l_value) = l_arg;
@@ -173,7 +173,7 @@ pub fn multiply(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Res
             l_type
         },
 
-        _ => return Err(ErrorKind::BadArguments(Box::new([ l_type, r_type ])).into()),
+        _ => return Err(ErrorKind::BadArguments(box [ l_type, r_type ]).into()),
     };
 
     Ok((res_type, res_id))
@@ -184,7 +184,7 @@ pub fn dot(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(
     use types::TypeName::*;
 
     if args.len() != 2 {
-        Err(ErrorKind::WrongArgumentsCount(args.len(), 2))?;
+        bail!(ErrorKind::WrongArgumentsCount(args.len(), 2));
     }
 
     let (l_type, l_value) = args[0];
@@ -201,7 +201,7 @@ pub fn dot(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(
 
             Ok((l_scalar, result_id))
         },
-        _ => Err(ErrorKind::BadArguments(Box::new([ l_type, r_type ])))?,
+        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type ])),
     }
 }
 
@@ -220,7 +220,7 @@ macro_rules! impl_math_op {
                     $name(builder, args[0..n - 1].to_vec())?,
                     args[n - 1],
                 ),
-                n => Err(ErrorKind::WrongArgumentsCount(n, 2))?,
+                n => bail!(ErrorKind::WrongArgumentsCount(n, 2)),
             };
 
             let result_id = builder.get_id();
@@ -296,7 +296,7 @@ macro_rules! impl_math_op {
                             l_type
                         },
 
-                        _ => Err(ErrorKind::BadArguments(Box::new([ l_type, r_type ])))?,
+                        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type ])),
                     }
                 };
                 ( $iopcode:ident, $fopcode:ident ) => {
@@ -339,7 +339,7 @@ macro_rules! impl_math_op {
                             l_type
                         },
 
-                        _ => return Err(ErrorKind::BadArguments(Box::new([ l_type, r_type ])).into()),
+                        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type ])),
                     }
                 };
             }

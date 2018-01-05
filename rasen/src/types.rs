@@ -27,8 +27,6 @@ impl TypeName {
     pub const FLOAT: &'static TypeName = &TypeName::Float(false);
     pub const DOUBLE: &'static TypeName = &TypeName::Float(true);
 
-    pub const SAMPLER2D: &'static TypeName = &TypeName::Sampler(TypeName::FLOAT, Dim::Dim2D);
-
     #[inline]
     pub fn is_bool(&self) -> bool {
         match *self {

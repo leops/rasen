@@ -11,14 +11,28 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-const INTS: [(&'static str, &'static str, &'static str); 3] = [
+static INTS: [(&'static str, &'static str, &'static str); 3] = [
     ("Bool", "b", "bool"),
     ("Int", "i", "i32"),
     ("UInt", "u", "u32"),
 ];
-const FLOATS: [(&'static str, &'static str, &'static str); 2] = [
+static FLOATS: [(&'static str, &'static str, &'static str); 2] = [
     ("Float", "", "f32"),
     ("Double", "d", "f64"),
+];
+
+static SAMPLERS: [(&'static str, &'static str); 3] = [
+    ("", "FLOAT"),
+    ("I", "INT"),
+    ("U", "UINT"),
+];
+static DIMENSIONS: [&'static str; 6] = [
+    "1D",
+    "2D",
+    "3D",
+    "Cube",
+    "Rect",
+    "Buffer",
 ];
 
 fn types(out_dir: &str) {
@@ -211,6 +225,24 @@ fn types(out_dir: &str) {
         }
     }
 
+    for dim in &DIMENSIONS {
+        let dim_upper = if *dim == "Rect" {
+            String::from("2DRECT")
+        } else {
+            dim.to_string().to_uppercase()
+        };
+
+        let dim = quote::Ident::from(format!("Dim{}", dim));
+        for &(prefix, ty) in &SAMPLERS {
+            let name = quote::Ident::from(format!("{}SAMPLER{}", prefix, dim_upper));
+            let ty = quote::Ident::from(ty);
+
+            const_types.push(quote! {
+                pub const #name: &'static TypeName = &TypeName::Sampler(TypeName::#ty, Dim::#dim);
+            });
+        }
+    }
+
     let type_name_impl = quote! {
         impl TypeName {
             #( #const_types )*
@@ -361,8 +393,8 @@ const NODES: [(&'static str, &'static str, &'static str); 24] = [(
     "Takes 3 parameters"
 ), (
     "Sample",
-    "Samples a texture usinga coordinates vector",
-    "Takes 2 parameters: the texture sampler and the coordinates"
+    "Samples a texture using a coordinates vector",
+    "Takes 2 or 3 parameters: the texture sampler, the coordinates, and an optional LOD bias"
 )];
 
 fn nodes(out_dir: &str) {
