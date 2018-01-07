@@ -1,6 +1,6 @@
 [package]
 name = "rasen"
-version = "0.9.0"
+version = "0.10.0"
 authors = ["l3ops <rasen@leops.me>"]
 description = "Generate SPIR-V bytecode from a data flow graph"
 documentation = "https://docs.rs/rasen/"

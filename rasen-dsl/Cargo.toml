@@ -12,7 +12,7 @@ build = "build.rs"
 default = []
 
 [dependencies]
-rasen = { version = "0.9.0", path = "../rasen" }
+rasen = { version = "0.10.0", path = "../rasen" }
 clippy = { version = "0.0.134", optional = true }
 
 [build-dependencies]

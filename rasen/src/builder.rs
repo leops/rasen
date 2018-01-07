@@ -7,7 +7,7 @@ use petgraph::algo::toposort;
 
 use spirv_headers::ExecutionModel as ShaderType;
 use spirv_headers::*;
-use rspirv::binary::Assemble;
+use rspirv::binary::{Assemble, Disassemble};
 use rspirv::mr::{
     Module, ModuleHeader, BasicBlock,
     Instruction, Function, Operand
@@ -89,7 +89,7 @@ fn sort_instructions(unsorted: &[Instruction]) -> Result<Vec<Instruction>> {
     }
 
     match toposort(&decl_graph, None) {
-        Err(_) => Err(ErrorKind::CyclicGraph.into()),
+        Err(_) => bail!(ErrorKind::CyclicGraph),
         Ok(indices) => Ok(
             indices.into_iter()
                 .map(|i| {
@@ -221,9 +221,9 @@ impl Builder {
     }
 
     /// Create a new Builder and add instructions to it based on a Graph
-    pub fn build(graph: &Graph, mod_type: ShaderType) -> Result<Builder> {
+    pub fn from_graph(graph: &Graph, mod_type: ShaderType) -> Result<Builder> {
         if graph.has_cycle() {
-            return Err(ErrorKind::CyclicGraph.into());
+            bail!(ErrorKind::CyclicGraph);
         }
 
         let mut program = Builder::new(mod_type);
@@ -541,7 +541,7 @@ impl Builder {
     }
 
     /// Build the module, returning a list of instructions
-    pub fn finalize(mut self) -> Result<Module> {
+    pub fn build(mut self) -> Result<Module> {
         let mut uniforms: Vec<(Word, Word, &'static TypeName)> = {
             self.uniforms.iter()
                 .map(|(k, &(a, b))| (*k, a, b))
@@ -696,9 +696,19 @@ impl Builder {
         })
     }
 
+    /// Get the instructions of the module in assembly form
+    pub fn into_assembly(self) -> Result<String> {
+        Ok(self.build()?.disassemble())
+    }
+
+    /// Get the instructions of the module in words form
+    pub fn into_words(self) -> Result<Vec<u32>> {
+        Ok(self.build()?.assemble())
+    }
+
     /// Get the instructions of the module in binary form
-    pub fn into_bytecode(self) -> Result<Vec<u8>> {
-        let mut res = self.finalize()?.assemble();
+    pub fn into_binary(self) -> Result<Vec<u8>> {
+        let mut res = self.into_words()?;
         let ptr = res.as_mut_ptr();
         let len = res.len().checked_mul(4).ok_or("Integer overflow")?;
         let cap = res.capacity().checked_mul(4).ok_or("Integer overflow")?;

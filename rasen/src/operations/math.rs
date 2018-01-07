@@ -173,7 +173,7 @@ pub fn multiply(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Res
             l_type
         },
 
-        _ => return Err(ErrorKind::BadArguments(box [ l_type, r_type ]).into()),
+        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type ])),
     };
 
     Ok((res_type, res_id))

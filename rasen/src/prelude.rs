@@ -12,6 +12,12 @@ use errors::Result;
 
 /// Transform a node graph to SPIR-V bytecode
 pub fn build_program(graph: &Graph, mod_type: ShaderType) -> Result<Vec<u8>> {
-    let program = Builder::build(graph, mod_type)?;
-    program.into_bytecode()
+    let program = Builder::from_graph(graph, mod_type)?;
+    program.into_binary()
+}
+
+/// Transform a node graph to SPIR-V assembly
+pub fn build_program_assembly(graph: &Graph, mod_type: ShaderType) -> Result<String> {
+    let program = Builder::from_graph(graph, mod_type)?;
+    program.into_assembly()
 }

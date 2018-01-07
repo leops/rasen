@@ -8,19 +8,19 @@ use rasen_dsl::prelude::*;
 
 include!("../../tests/plugin.rs");
 
-static REF_VERT: &'static [u8] = include_bytes!("../../tests/basic.vert.spv");
-static REF_FRAG: &'static [u8] = include_bytes!("../../tests/basic.frag.spv");
+static REF_VERT: &'static str = include_str!("../../tests/basic.vert.spvasm");
+static REF_FRAG: &'static str = include_str!("../../tests/basic.frag.spvasm");
 
 #[test]
 fn test_build_basic_vert() {
     let shader = basic_vert_shader();
-    let bytecode = shader.build(ShaderType::Vertex).unwrap();
-    assert_eq!(bytecode, REF_VERT);
+    let assembly = shader.build_assembly(ShaderType::Vertex).unwrap();
+    assert_eq!(assembly, REF_VERT);
 }
 
 #[test]
 fn test_build_basic_frag() {
     let shader = basic_frag_shader();
-    let bytecode = shader.build(ShaderType::Fragment).unwrap();
-    assert_eq!(bytecode, REF_FRAG);
+    let assembly = shader.build_assembly(ShaderType::Fragment).unwrap();
+    assert_eq!(assembly, REF_FRAG);
 }

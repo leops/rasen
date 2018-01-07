@@ -22,7 +22,7 @@ macro_rules! unary_vec {
             let (res_type, scalar) = if let Vec(_, scalar) = *arg_ty {
                 (builder.register_type(scalar), scalar)
             } else {
-                return Err(ErrorKind::BadArguments(box [ arg_ty ]).into());
+                bail!(ErrorKind::BadArguments(box [ arg_ty ]));
             };
 
             let res_id = builder.get_id();
@@ -82,9 +82,9 @@ macro_rules! variadic_any {
                 _ if l_type == r_type && r_type.is_float() => $fcode,
                 (&Vec(l_len, l_scalar), &Vec(r_len, r_scalar)) if l_len == r_len && l_scalar == r_scalar && r_scalar.is_float() => $fcode,
 
-                _ => Err(ErrorKind::BadArguments(Box::new([
+                _ => bail!(ErrorKind::BadArguments(box [
                     l_type, r_type
-                ])))?,
+                ])),
             };
 
             let res_type = builder.register_type(l_type);
@@ -140,9 +140,9 @@ macro_rules! trinary_any {
                 _ if a_type == b_type && b_type == c_type && a_type.is_float() => $fcode,
                 (&Vec(a_len, a_scalar), &Vec(b_len, b_scalar), &Vec(c_len, c_scalar)) if a_len == b_len && b_len == c_len && a_scalar == b_scalar && b_scalar == c_scalar && a_scalar.is_float() => $fcode,
 
-                _ => Err(ErrorKind::BadArguments(Box::new([
+                _ => bail!(ErrorKind::BadArguments(box [
                     a_type, b_type, c_type
-                ])))?,
+                ])),
             };
 
             let res_type = builder.register_type(a_type);
@@ -207,9 +207,9 @@ pub fn distance(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Res
 
             Ok((l_scalar, res_id))
         },
-        _ => Err(ErrorKind::BadArguments(Box::new([
+        _ => bail!(ErrorKind::BadArguments(box [
             l_type, r_type
-        ])))?,
+        ])),
     }
 }
 

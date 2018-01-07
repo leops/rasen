@@ -1,6 +1,6 @@
 //! Shader builder utility
 
-use rasen::prelude::{ShaderType, build_program};
+use rasen::prelude::{ShaderType, build_program, build_program_assembly};
 use rasen::errors;
 
 use value::{GraphRef, Value};
@@ -18,6 +18,10 @@ impl Shader {
 
     pub fn build(&self, ty: ShaderType) -> errors::Result<Vec<u8>> {
         build_program(&self.graph.borrow(), ty)
+    }
+
+    pub fn build_assembly(&self, ty: ShaderType) -> errors::Result<String> {
+        build_program_assembly(&self.graph.borrow(), ty)
     }
 }
 
