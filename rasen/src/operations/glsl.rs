@@ -11,7 +11,7 @@ use errors::*;
 macro_rules! unary_vec {
     ( $name:ident, $op:ident ) => {
         #[inline]
-        pub fn $name(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+        pub fn $name<B: Builder>(builder: &mut B, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
             if args.len() != 1 {
@@ -22,7 +22,7 @@ macro_rules! unary_vec {
             let (res_type, scalar) = if let Vec(_, scalar) = *arg_ty {
                 (builder.register_type(scalar), scalar)
             } else {
-                bail!(ErrorKind::BadArguments(box [ arg_ty ]));
+                bail!(ErrorKind::BadArguments(Box::new([ arg_ty ])));
             };
 
             let res_id = builder.get_id();
@@ -54,7 +54,7 @@ unary_vec!(length, Length);
 macro_rules! variadic_any {
     ( $name:ident, $op:ident, $scode:ident, $ucode:ident, $fcode:ident ) => {
         #[inline]
-        pub fn $name(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+        pub fn $name<B: Builder>(builder: &mut B, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
             let (l_arg, r_arg) = match args.len() {
@@ -82,9 +82,9 @@ macro_rules! variadic_any {
                 _ if l_type == r_type && r_type.is_float() => $fcode,
                 (&Vec(l_len, l_scalar), &Vec(r_len, r_scalar)) if l_len == r_len && l_scalar == r_scalar && r_scalar.is_float() => $fcode,
 
-                _ => bail!(ErrorKind::BadArguments(box [
+                _ => bail!(ErrorKind::BadArguments(Box::new([
                     l_type, r_type
-                ])),
+                ]))),
             };
 
             let res_type = builder.register_type(l_type);
@@ -117,7 +117,7 @@ variadic_any!(max, Max, SMax, UMax, FMax);
 macro_rules! trinary_any {
     ($name:ident, $op:ident, $fcode:ident$(, $scode:ident, $ucode:ident )*) => {
         #[inline]
-        pub fn $name(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+        pub fn $name<B: Builder>(builder: &mut B, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
             if args.len() != 3 {
@@ -140,9 +140,9 @@ macro_rules! trinary_any {
                 _ if a_type == b_type && b_type == c_type && a_type.is_float() => $fcode,
                 (&Vec(a_len, a_scalar), &Vec(b_len, b_scalar), &Vec(c_len, c_scalar)) if a_len == b_len && b_len == c_len && a_scalar == b_scalar && b_scalar == c_scalar && a_scalar.is_float() => $fcode,
 
-                _ => bail!(ErrorKind::BadArguments(box [
+                _ => bail!(ErrorKind::BadArguments(Box::new([
                     a_type, b_type, c_type
-                ])),
+                ]))),
             };
 
             let res_type = builder.register_type(a_type);
@@ -174,7 +174,7 @@ trinary_any!(clamp, Clamp, FClamp, SClamp, UClamp);
 trinary_any!(mix, Mix, FMix);
 
 #[inline]
-pub fn distance(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
+pub fn distance<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 2 {
@@ -207,14 +207,14 @@ pub fn distance(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Res
 
             Ok((l_scalar, res_id))
         },
-        _ => bail!(ErrorKind::BadArguments(box [
+        _ => bail!(ErrorKind::BadArguments(Box::new([
             l_type, r_type
-        ])),
+        ]))),
     }
 }
 
 #[inline]
-pub fn reflect(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
+pub fn reflect<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 2 {
@@ -247,12 +247,12 @@ pub fn reflect(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Resu
 
             Ok((l_type, result_id))
         },
-        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type ])),
+        _ => bail!(ErrorKind::BadArguments(Box::new([ l_type, r_type ]))),
     }
 }
 
 #[inline]
-pub fn refract(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
+pub fn refract<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 3 {
@@ -287,12 +287,12 @@ pub fn refract(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Resu
 
             Ok((l_type, res_id))
         },
-        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type, i_type ])),
+        _ => bail!(ErrorKind::BadArguments(Box::new([ l_type, r_type, i_type ]))),
     }
 }
 
 #[inline]
-pub fn sample(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
+pub fn sample<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() < 2 || args.len() > 3 {
@@ -329,7 +329,7 @@ pub fn sample(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Resul
 
             if let Some(&(bias_type, bias_value)) = args.get(2) {
                 if bias_type != TypeName::FLOAT {
-                    bail!(ErrorKind::BadArguments(box [ image_type, coords_type, bias_type ]));
+                    bail!(ErrorKind::BadArguments(Box::new([ image_type, coords_type, bias_type ])));
                 }
 
                 operands.push(Operand::ImageOperands(ImageOperands::BIAS));
@@ -349,9 +349,9 @@ pub fn sample(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Resul
         },
         
         _ => if let Some(&(bias_type, _)) = args.get(2) {
-            bail!(ErrorKind::BadArguments(box [ image_type, coords_type, bias_type ]))
+            bail!(ErrorKind::BadArguments(Box::new([ image_type, coords_type, bias_type ])))
         } else {
-            bail!(ErrorKind::BadArguments(box [ image_type, coords_type ]))
+            bail!(ErrorKind::BadArguments(Box::new([ image_type, coords_type ])))
         },
     }
 }

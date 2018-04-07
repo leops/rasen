@@ -21,11 +21,15 @@ fn build_basic_vert() -> Graph {
     let norm_x = graph.add_node(Node::Extract(0));
     let norm_y = graph.add_node(Node::Extract(1));
     let norm_z = graph.add_node(Node::Extract(2));
+    let norm_x2 = graph.add_node(Node::Extract(0));
+    let norm_y2 = graph.add_node(Node::Extract(1));
+    let norm_z2 = graph.add_node(Node::Extract(2));
     let pos_4 = graph.add_node(Node::Construct(TypeName::VEC4));
     let norm_4 = graph.add_node(Node::Construct(TypeName::VEC4));
+    let norm_3 = graph.add_node(Node::Construct(TypeName::VEC3));
 
     let o_pos = graph.add_node(Node::Output(0, TypeName::VEC4));
-    let o_norm = graph.add_node(Node::Output(1, TypeName::VEC4));
+    let o_norm = graph.add_node(Node::Output(1, TypeName::VEC3));
     let o_uv = graph.add_node(Node::Output(2, TypeName::VEC2));
 
     graph.add_edge(projection, vp, 0);
@@ -56,8 +60,16 @@ fn build_basic_vert() -> Graph {
     graph.add_edge(model, mul_norm, 0);
     graph.add_edge(norm_4, mul_norm, 1);
 
+    graph.add_edge(mul_norm, norm_x2, 0);
+    graph.add_edge(mul_norm, norm_y2, 0);
+    graph.add_edge(mul_norm, norm_z2, 0);
+
+    graph.add_edge(norm_x2, norm_3, 0);
+    graph.add_edge(norm_y2, norm_3, 1);
+    graph.add_edge(norm_z2, norm_3, 2);
+
     graph.add_edge(mul_pos, o_pos, 0);
-    graph.add_edge(mul_norm, o_norm, 0);
+    graph.add_edge(norm_3, o_norm, 0);
     graph.add_edge(uv, o_uv, 0);
     
     graph

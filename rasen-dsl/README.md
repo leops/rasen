@@ -9,7 +9,7 @@ extern crate rasen_dsl;
 use rasen_dsl::prelude::*;
 
 fn main() {
-    let shader = Shader::new();
+    let shader = Module::new();
 
     let normal: Value<Vec3> = normalize(shader.input(0));
     let light = vec3(0.3, -0.5, 0.2);

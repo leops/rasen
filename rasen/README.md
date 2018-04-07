@@ -3,10 +3,12 @@ rasen
 
 The `rasen` crate contains the core graph compiler itself. It provides graph building utilities (the `Graph` struct),
 various types (`rasen::types::*`) and operations (`rasen::node::*`) definitions, and SPIR-V compilation utilities (the
-`Builder` struct).
+`ModuleBuilder` struct).
 
-It's perfectly possible to use this crate as-is by creating a `Graph` struct and buidling the module node-by-node,
-though this method tends to be quite verbose:
+The API is intentionally low-level, as the use case for the core compiler is to act as a backend for a graph-based
+material editor in a game engine.  It's perfectly possible to use this crate as-is by creating a `Graph` struct and
+building the module node-by-node, however this method tends to be quite verbose for "static" shaders:
+
 ```rust
 extern crate rasen;
 

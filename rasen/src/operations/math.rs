@@ -8,7 +8,7 @@ use types::*;
 use errors::*;
 
 #[inline]
-fn imul(builder: &mut Builder, res_type: &'static TypeName, res_id: u32, lhs: u32, rhs: u32) {
+fn imul<B: Builder>(builder: &mut B, res_type: &'static TypeName, res_id: u32, lhs: u32, rhs: u32) {
     let res_type = builder.register_type(res_type);
 
     builder.push_instruction(
@@ -24,7 +24,7 @@ fn imul(builder: &mut Builder, res_type: &'static TypeName, res_id: u32, lhs: u3
     );
 }
 #[inline]
-fn fmul(builder: &mut Builder, res_type: &'static TypeName, res_id: u32, lhs: u32, rhs: u32) {
+fn fmul<B: Builder>(builder: &mut B, res_type: &'static TypeName, res_id: u32, lhs: u32, rhs: u32) {
     let res_type = builder.register_type(res_type);
 
     builder.push_instruction(
@@ -39,7 +39,7 @@ fn fmul(builder: &mut Builder, res_type: &'static TypeName, res_id: u32, lhs: u3
     );
 }
 #[inline]
-fn vector_times_scalar(builder: &mut Builder, res_type: &'static TypeName, res_id: u32, vector: u32, scalar: u32) {
+fn vector_times_scalar<B: Builder>(builder: &mut B, res_type: &'static TypeName, res_id: u32, vector: u32, scalar: u32) {
     let res_type = builder.register_type(res_type);
 
     builder.push_instruction(
@@ -55,7 +55,7 @@ fn vector_times_scalar(builder: &mut Builder, res_type: &'static TypeName, res_i
     );
 }
 #[inline]
-fn matrix_times_scalar(builder: &mut Builder, res_type: &'static TypeName, res_id: u32, matrix: u32, scalar: u32) {
+fn matrix_times_scalar<B: Builder>(builder: &mut B, res_type: &'static TypeName, res_id: u32, matrix: u32, scalar: u32) {
     let res_type = builder.register_type(res_type);
 
     builder.push_instruction(
@@ -72,7 +72,7 @@ fn matrix_times_scalar(builder: &mut Builder, res_type: &'static TypeName, res_i
 }
 
 #[inline]
-pub fn multiply(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
+pub fn multiply<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     let (l_arg, r_arg) = match args.len() {
@@ -173,14 +173,14 @@ pub fn multiply(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Res
             l_type
         },
 
-        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type ])),
+        _ => bail!(ErrorKind::BadArguments(Box::new([ l_type, r_type ]))),
     };
 
     Ok((res_type, res_id))
 }
 
 #[inline]
-pub fn dot(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
+pub fn dot<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 2 {
@@ -201,14 +201,14 @@ pub fn dot(builder: &mut Builder, args: &[(&'static TypeName, u32)]) -> Result<(
 
             Ok((l_scalar, result_id))
         },
-        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type ])),
+        _ => bail!(ErrorKind::BadArguments(Box::new([ l_type, r_type ]))),
     }
 }
 
 macro_rules! impl_math_op {
     ( $name:ident, $node:ident, $variadic:expr, $( $opcode:ident ),* ) => {
         #[inline]
-        pub fn $name(builder: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+        pub fn $name<B: Builder>(builder: &mut B, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
             let (l_arg, r_arg) = match args.len() {
@@ -296,7 +296,7 @@ macro_rules! impl_math_op {
                             l_type
                         },
 
-                        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type ])),
+                        _ => bail!(ErrorKind::BadArguments(Box::new([ l_type, r_type ]))),
                     }
                 };
                 ( $iopcode:ident, $fopcode:ident ) => {
@@ -339,7 +339,7 @@ macro_rules! impl_math_op {
                             l_type
                         },
 
-                        _ => bail!(ErrorKind::BadArguments(box [ l_type, r_type ])),
+                        _ => bail!(ErrorKind::BadArguments(Box::new([ l_type, r_type ]))),
                     }
                 };
             }

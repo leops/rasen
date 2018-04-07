@@ -1,12 +1,40 @@
 //! Definitions for the Value type
 
 use rasen::prelude::{Graph, NodeIndex};
+use rasen::module::FunctionRef;
 
-use std::rc::Rc;
-use std::cell::RefCell;
+use std::cell::RefMut;
 use std::marker::PhantomData;
 
-pub type GraphRef = Rc<RefCell<Graph>>;
+use module::{Module, ModuleRef};
+
+pub(crate) type GraphRef<'a> = RefMut<'a, Graph>;
+
+#[doc(hidden)]
+#[derive(Copy, Clone, Debug)]
+pub enum FuncKind {
+    Main,
+    Ref(FunctionRef),
+}
+
+impl FuncKind {
+    pub fn get_graph_mut<'a>(&self, module: ModuleRef<'a>) -> GraphRef<'a> {
+        match *self {
+            FuncKind::Main => RefMut::map(
+                module, |module| {
+                    // let module = shader.module.get_mut();
+                    &mut module.main
+                },
+            ),
+            FuncKind::Ref(index) => RefMut::map(
+                module, |module| {
+                    // let module = shader.module.get_mut();
+                    &mut module[index]
+                },
+            ),
+        }
+    }
+}
 
 /// Representation of a shader value
 #[derive(Clone, Debug)]
@@ -15,19 +43,29 @@ pub enum Value<T> {
     Concrete(T),
     /// Reference to a node in the graph
     Abstract {
-        graph: GraphRef,
+        module: Module,
+        function: FuncKind,
         index: NodeIndex<u32>,
         ty: PhantomData<T>,
     },
 }
 
+impl<T> Value<T> {
+    #[doc(hidden)]
+    pub fn get_module(&self) -> Option<Module> {
+        match *self {
+            Value::Concrete(_) => None,
+            Value::Abstract { ref module, .. } => Some(module.clone()),
+        }
+    }
+}
+
 /// Trait implemented by any type the DSL considers the be a "value" (including the Value enum itself)
 pub trait IntoValue {
     type Output;
-    /// Gets a graph reference from this value, if it holds one
-    fn get_graph(&self) -> Option<GraphRef> { None }
-    /// Gets the concrete value of this value, if it is indeed concrete
-    fn get_concrete(&self) -> Option<Self::Output>;
+
+    // Convert this object into a Value object
+    fn into_value(self) -> Value<Self::Output>;
     /// Registers this value into a Graph and returns the node index
     fn get_index(&self, graph: GraphRef) -> NodeIndex<u32>;
 }
@@ -35,18 +73,8 @@ pub trait IntoValue {
 impl<T> IntoValue for Value<T> where T: IntoValue + Clone {
     type Output = T;
 
-    fn get_graph(&self) -> Option<GraphRef> {
-        match *self {
-            Value::Concrete(_) => None,
-            Value::Abstract { ref graph, .. } => Some(graph.clone()),
-        }
-    }
-
-    fn get_concrete(&self) -> Option<T> {
-        match *self {
-            Value::Concrete(ref v) => Some(v.clone()),
-            Value::Abstract { .. } => None,
-        }
+    fn into_value(self) -> Value<T> {
+        self
     }
 
     fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
@@ -60,18 +88,8 @@ impl<T> IntoValue for Value<T> where T: IntoValue + Clone {
 impl<'a, T> IntoValue for &'a Value<T> where T: IntoValue + Clone {
     type Output = T;
 
-    fn get_graph(&self) -> Option<GraphRef> {
-        match **self {
-            Value::Concrete(_) => None,
-            Value::Abstract { ref graph, .. } => Some(graph.clone()),
-        }
-    }
-
-    fn get_concrete(&self) -> Option<T> {
-        match **self {
-            Value::Concrete(ref v) => Some(v.clone()),
-            Value::Abstract { .. } => None,
-        }
+    fn into_value(self) -> Value<T> {
+        self.clone()
     }
 
     fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {

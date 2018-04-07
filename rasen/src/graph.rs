@@ -10,7 +10,7 @@ use petgraph::{
 
 use super::node::*;
 
-/// Convenience wrapper for `petgraph::Graph`
+/// Convenience wrapper for [petgraph::Graph](::petgraph::graph::Graph)
 #[derive(Debug)]
 pub struct Graph {
     graph: PetGraph<Node, u32>,
@@ -43,11 +43,14 @@ impl Graph {
     /// List all the outputs of the graph
     #[cfg_attr(feature="clippy", allow(needless_lifetimes))]
     pub fn outputs<'a>(&'a self) -> Box<Iterator<Item=NodeIndex<u32>> + 'a> {
-        box self.graph.externals(Outgoing)
+        Box::new(
+            self.graph.externals(Outgoing)
                 .filter(move |index| match self.graph.node_weight(*index) {
-                    Some(&Node::Output(_, _)) => true,
+                    Some(&Node::Output(_, _)) |
+                    Some(&Node::Return) => true,
                     _ => false,
                 })
+        )
     }
 
     /// List the incoming connections for a node
@@ -57,7 +60,9 @@ impl Graph {
 
         vec.sort_by_key(|e| e.weight());
 
-        box vec.into_iter().map(|e| e.source())
+        Box::new(
+            vec.into_iter().map(|e| e.source())
+        )
     }
 }
 

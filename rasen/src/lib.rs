@@ -1,7 +1,7 @@
-//! Build a SPIR-V module from an operation graph
+//! Build a SPIR-V module from a data flow graph
 //!
-//! This library lets you define a shader module as a graph (using the `petgraph` library) of
-//! `Node`, describing the operations needed to obtain the outputs of the shader.
+//! This library lets you define a shader module as a `Graph` of `Node`,
+//! describing the operations needed to obtain the outputs of the shader.
 //!
 //! ```
 //! # extern crate rasen;
@@ -54,11 +54,10 @@
 //! # }
 //! ```
 //!
-//! On a lower level, you can use the `Builder` struct to build your module by adding instructions
+//! On a lower level, you can use the `ModuleBuilder` struct to build your module by adding instructions
 //! directly into it.
 //!
 
-#![feature(box_syntax)]
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", warn(
@@ -71,12 +70,14 @@ extern crate spirv_headers;
 extern crate rspirv;
 #[macro_use]
 extern crate error_chain;
+extern crate fnv;
 
 mod types;
 mod operations;
 mod builder;
 mod node;
 
+pub mod module;
 pub mod graph;
 pub mod errors;
 pub mod prelude;

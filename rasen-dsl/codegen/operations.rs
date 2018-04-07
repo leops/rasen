@@ -22,60 +22,101 @@ fn operation(name: &str, args: u32, adnl_generics: &[Ident], constraints: &Token
             .map(|(arg, ty)| quote! { #arg: #ty })
             .collect()
     };
-    let srcs1: Vec<_> = {
-        args.iter()
-            .map(|arg| Ident::from(format!("{}_src", arg)))
-            .collect()
-    };
-    let srcs2 = srcs1.clone();
+    
+    let args2 = args.clone();
 
     for gen in adnl_generics {
         generics.push(gen.clone());
     }
 
-    let graph_opt = {
-        args.iter()
-            .map(|arg| quote! { #arg.get_graph() })
-            .fold(None, |root, item| match root {
-                Some(tokens) => Some(quote! { #tokens.or(#item) }),
-                None => Some(item),
-            })
-    };
-
-    let destruct_args = if args.len() > 1 {
-        let args2 = args.clone();
-        let args3 = args.clone();
-        quote! { let ( #( Some(#args2) ),* ) = ( #( #args3.get_concrete() ),* ) }
-    } else {
-        quote! { let Some(arg_0) = arg_0.get_concrete() }
-    };
+    let method_impl = match_values(
+        &args,
+        implementation,
+        quote! {
+            let index = graph.add_node(Node::#node);
+            #( graph.add_edge(#args2, index, #indices); )*
+            index
+        },
+    );
 
     quote! {
         #[allow(unused_variables)]
         pub fn #fn_name< #( #generics , )* R >( #( #arg_list ),* ) -> Value<R> #constraints {
-            if #destruct_args {
-                #implementation
-            }
+            #method_impl
+        }
+    }
+}
 
-            let graph_opt = #graph_opt;
-            if let Some(graph_ref) = graph_opt {
-                #( let #srcs1 = #args.get_index(graph_ref.clone()); )*
+pub fn match_values(names: &[Ident], concrete: &Tokens, index: Tokens) -> Tokens {
+    let parts = names.len();
+    let arms: Vec<_> = {
+        (0..2u32.pow(parts as u32))
+            .map(|id| {
+                if id == 0 {
+                    quote! {
+                        ( #( Value::Concrete( #names ), )* ) => {
+                            return { #concrete }
+                        },
+                    }
+                } else {
+                    let mut first_abstract = true;
+                    let (patterns, indices): (Vec<_>, Vec<_>) = {
+                        names.into_iter().enumerate()
+                            .map(move |(i, name)| {
+                                if (id >> i) & 1 == 1 {
+                                    (
+                                        if first_abstract {
+                                            first_abstract = false;
+                                            quote! { Value::Abstract { module, function, index: #name, .. } }
+                                        } else {
+                                            quote! { Value::Abstract { index: #name, .. } }
+                                        },
+                                        quote! { #name }
+                                    )
+                                } else {
+                                    (
+                                        quote! { #name @ Value::Concrete(_) },
+                                        quote! {{
+                                            let module = module.borrow_mut();
+                                            let graph = function.get_graph_mut(module);
+                                            #name.get_index(graph)
+                                        }}
+                                    )
+                                }
+                            })
+                            .unzip()
+                    };
 
-                let index = {
-                    let mut graph = graph_ref.borrow_mut();
-                    let index = graph.add_node(Node::#node);
-                    #( graph.add_edge(#srcs2, index, #indices); )*
-                    index
-                };
+                    let ident1: Vec<_> = (0..indices.len()).map(|i| Ident::from(format!("tmp_{}", i))).collect();
+                    let ident2 = ident1.clone();
 
-                return Value::Abstract {
-                    graph: graph_ref.clone(),
-                    index,
-                    ty: PhantomData,
-                };
-            }
+                    quote! {
+                        ( #( #patterns, )* ) => {
+                            #( let #ident1 = #indices; )*
+                            ( module, function, #( #ident2 ),* )
+                        },
+                    }
+                }
+            })
+            .collect()
+    };
 
-            unreachable!()
+    quote! {
+        let ( module, function, #( #names ),* ) = match ( #( #names.into_value(), )* ) {
+            #( #arms )*
+        };
+
+        let index = {
+            let module = module.borrow_mut();
+            let mut graph = function.get_graph_mut(module);
+            #index
+        };
+
+        Value::Abstract {
+            module,
+            function,
+            index,
+            ty: PhantomData,
         }
     }
 }
@@ -87,10 +128,13 @@ pub fn impl_operations() -> Vec<Tokens> {
             quote! { where T0: IntoValue<Output=R>, R: Vector<S>, S: Floating },
             quote! {
                 let count = R::component_count();
-                let length = length(arg_0).get_concrete().unwrap();
+                let length = match length(arg_0) {
+                    Value::Concrete(v) => v,
+                    _ => unreachable!(),
+                };
                 let arr: Vec<_> = (0..count).map(|i| arg_0[i] / length).collect();
                 let vec: R = arr.into();
-                return vec.into();
+                vec.into()
             }
         ), (
             "Dot", 2, &[ Ident::from("V") ],
@@ -98,7 +142,7 @@ pub fn impl_operations() -> Vec<Tokens> {
             quote! {
                 let count = V::component_count();
                 let val: R = (0..count).map(|i| arg_0[i] * arg_1[i]).sum();
-                return val.into();
+                val.into()
             }
         ), (
             "Clamp", 3, &[],
@@ -107,7 +151,7 @@ pub fn impl_operations() -> Vec<Tokens> {
                 let x: Value<R> = arg_0.into();
                 let min_val: Value<R> = arg_1.into();
                 let max_val: Value<R> = arg_2.into();
-                return min(max(x, min_val), max_val);
+                min(max(x, min_val), max_val)
             }
         ), (
             "Cross", 2, &[ Ident::from("S") ],
@@ -118,61 +162,61 @@ pub fn impl_operations() -> Vec<Tokens> {
                     arg_0[2] * arg_1[0] - arg_1[2] * arg_0[0],
                     arg_0[0] * arg_1[1] - arg_1[0] * arg_0[1],
                 ].into();
-                return vec.into();
+                vec.into()
             }
         ), (
             "Floor", 1, &[],
             quote! { where T0: IntoValue<Output=R>, R: Floating },
             quote! {
-                return arg_0.floor().into();
+                arg_0.floor().into()
             }
         ), (
             "Ceil", 1, &[],
             quote! { where T0: IntoValue<Output=R>, R: Floating },
             quote! {
-                return arg_0.ceil().into();
+                arg_0.ceil().into()
             }
         ), (
             "Round", 1, &[],
             quote! { where T0: IntoValue<Output=R>, R: Floating },
             quote! {
-                return arg_0.round().into();
+                arg_0.round().into()
             }
         ), (
             "Sin", 1, &[],
             quote! { where T0: IntoValue<Output=R>, R: Floating },
             quote! {
-                return arg_0.sin().into();
+                arg_0.sin().into()
             }
         ), (
             "Cos", 1, &[],
             quote! { where T0: IntoValue<Output=R>, R: Floating },
             quote! {
-                return arg_0.cos().into();
+                arg_0.cos().into()
             }
         ), (
             "Tan", 1, &[],
             quote! { where T0: IntoValue<Output=R>, R: Floating },
             quote! {
-                return arg_0.tan().into();
+                arg_0.tan().into()
             }
         ), (
             "Pow", 2, &[],
             quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Numerical },
             quote! {
-                return Numerical::pow(arg_0, arg_1).into();
+                Numerical::pow(arg_0, arg_1).into()
             }
         ), (
             "Min", 2, &[],
             quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar },
             quote! {
-                return (if arg_1 < arg_0 { arg_1 } else { arg_0 }).into();
+                (if arg_1 < arg_0 { arg_1 } else { arg_0 }).into()
             }
         ), (
             "Max", 2, &[],
             quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar },
             quote! {
-                return (if arg_1 > arg_0 { arg_1 } else { arg_0 }).into();
+                (if arg_1 > arg_0 { arg_1 } else { arg_0 }).into()
             }
         ), (
             "Length", 1, &[ Ident::from("V") ],
@@ -185,46 +229,52 @@ pub fn impl_operations() -> Vec<Tokens> {
                         .sum()
                 };
 
-                return length.sqrt().into();
+                length.sqrt().into()
             }
         ), (
             "Distance", 2, &[ Ident::from("V") ],
             quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R> + Sub<V, Output=V>, R: Floating },
             quote! {
-                return length(arg_0 - arg_1);
+                length(arg_0 - arg_1)
             }
         ), (
             "Reflect", 2, &[ Ident::from("S") ],
             quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S> + Sub<R, Output=R>, S: Numerical + Mul<R, Output=R> },
             quote! {
-                let res: S = dot(arg_1, arg_0).get_concrete().unwrap();
+                let res: S = match dot(arg_1, arg_0) {
+                    Value::Concrete(v) => v,
+                    _ => unreachable!(),
+                };
                 let res: S = res + res;
                 let res: R = arg_0 - res * arg_1;
-                return res.into();
+                res.into()
             }
         ), (
             "Refract", 3, &[ Ident::from("S") ],
             quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=S>, R: Vector<S> + Sub<R, Output=R>, S: Floating + Mul<R, Output=R> },
             quote! {
                 let one: S = Scalar::one();
-                let dot: S = dot(arg_1, arg_0).get_concrete().unwrap();
+                let dot: S = match dot(arg_1, arg_0) {
+                    Value::Concrete(v) => v,
+                    _ => unreachable!(),
+                };
                 let k: S = one - arg_2 * arg_2 * (one - dot * dot);
 
                 let res: R = if k < Scalar::zero() {
                     Vector::zero()
                 } else {
-                    let lhs: R = (arg_2 * arg_0).get_concrete().unwrap();
-                    let rhs: R = ((arg_2 * dot + k.sqrt()) * arg_1).get_concrete().unwrap();
+                    let lhs = arg_2 * arg_0;
+                    let rhs = (arg_2 * dot + k.sqrt()) * arg_1;
                     lhs - rhs
                 };
 
-                return res.into();
+                res.into()
             }
         ), (
             "Mix", 3, &[ Ident::from("V0"), Ident::from("V1"), Ident::from("V2"), Ident::from("V3"), Ident::from("V4") ],
-            quote! { where T0: IntoValue<Output=V0>, T1: IntoValue<Output=V1>, T2: IntoValue<Output=V2>, V0: Copy + Add<V4, Output=R>, V1: Sub<V0, Output=V3>, V2: Mul<V3, Output=V4>, R: Into<Value<R>> },
+            quote! { where T0: IntoValue<Output=V0>, T1: IntoValue<Output=V1>, T2: IntoValue<Output=V2>, V0: IntoValue + Copy + Add<V4, Output=R>, V1: IntoValue + Clone + Sub<V0, Output=V3>, V2: IntoValue + Clone + Mul<V3, Output=V4>, R: Into<Value<R>> },
             quote! {
-                return (arg_0 + arg_2 * (arg_1 - arg_0)).into();
+                (arg_0 + arg_2 * (arg_1 - arg_0)).into()
             }
         )
     ];

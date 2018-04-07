@@ -11,15 +11,15 @@ include!("../../tests/graph.rs");
 #[bench]
 fn bench_build_basic_vert(b: &mut Bencher) {
     let graph = build_basic_vert();
-    b.iter(||
-        build_program(&graph, ShaderType::Vertex).unwrap()
-    );
+    b.iter(|| {
+        ModuleBuilder::from_graph(&graph, ShaderType::Vertex).unwrap().build().unwrap()
+    });
 }
 
 #[bench]
 fn bench_build_basic_frag(b: &mut Bencher) {
     let graph = build_basic_frag();
-    b.iter(||
-        build_program(&graph, ShaderType::Fragment).unwrap()
-    );
+    b.iter(|| {
+        ModuleBuilder::from_graph(&graph, ShaderType::Fragment).unwrap().build().unwrap()
+    });
 }

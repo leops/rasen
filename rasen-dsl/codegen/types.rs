@@ -2,6 +2,7 @@
 
 use quote::{Ident, Tokens};
 use codegen::defs::{Category, Type, all_types};
+use codegen::operations::match_values;
 
 fn trait_scalar(name: Ident, ty: Ident, (zero, one): (Ident, Ident)) -> Tokens {
     quote! {
@@ -163,12 +164,11 @@ fn type_scalar(name: &Ident, ty: &'static str) -> Tokens {
         impl IntoValue for #name {
             type Output = #name;
 
-            fn get_concrete(&self) -> Option<Self::Output> {
-                Some(*self)
+            fn into_value(self) -> Value<#name> {
+                Value::Concrete(self)
             }
 
-            fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
-                let mut graph = graph.borrow_mut();
+            fn get_index(&self, mut graph: GraphRef) -> NodeIndex<u32> {
                 graph.add_node(Node::Constant(TypedValue::#name(*self)))
             }
         }
@@ -212,26 +212,32 @@ fn type_vector(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
     let args1: Vec<_> = generics.iter().map(|gen| Ident::from(gen.as_ref().to_lowercase())).collect();
     let args2 = args1.clone();
     let args3 = args1.clone();
-    let args4 = args1.clone();
-    let sources1: Vec<_> = args1.iter().map(|ident| Ident::from(format!("{}_src", ident))).collect();
-    let sources2 = sources1.clone();
-    let arg_list: Vec<_> = generics.iter()
-        .zip(args1.iter())
-        .map(|(gen, name)| quote! { #name: #gen })
-        .collect();
-    let constraints: Vec<_> = generics.iter()
-        .map(|gen| {
-            let comp = component.name.clone();
-            quote! { #gen: IntoValue<Output=#comp> }
-        })
-        .collect();
+    let arg_list: Vec<_> = {
+        generics.iter()
+            .zip(args1.iter())
+            .map(|(gen, name)| quote! { #name: #gen })
+            .collect()
+    };
+    let constraints: Vec<_> = {
+        generics.iter()
+            .map(|gen| {
+                let comp = component.name.clone();
+                quote! { #gen: IntoValue<Output=#comp> }
+            })
+            .collect()
+    };
 
-    let graph_opt = args1.iter()
-        .fold(None, |curr, arg| match curr {
-            Some(tokens) => Some(quote! { #tokens.or(#arg.get_graph()) }),
-            None => Some(quote! { #arg.get_graph() }),
-        })
-        .unwrap();
+    let func_impl = match_values(
+        &args1,
+        &quote! {
+            Value::Concrete(#name( #( #args3 ),* ))
+        },
+        quote! {
+            let index = graph.add_node(Node::Construct(TypeName::#upper));
+            #( graph.add_edge(#args2, index, #indices); )*
+            index
+        },
+    );
 
     quote! {
         #[derive(Copy, Clone, Debug)]
@@ -263,41 +269,18 @@ fn type_vector(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
         impl IntoValue for #name {
             type Output = #name;
 
-            fn get_concrete(&self) -> Option<Self::Output> {
-                Some(*self)
+            fn into_value(self) -> Value<#name> {
+                Value::Concrete(self)
             }
 
-            fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
-                let mut graph = graph.borrow_mut();
+            fn get_index(&self, mut graph: GraphRef) -> NodeIndex<u32> {
                 graph.add_node(Node::Constant(TypedValue::#name( #( #fields ),* )))
             }
         }
 
         #[inline]
         pub fn #lower< #( #generics ),* >( #( #arg_list ),* ) -> Value<#name> where #( #constraints ),* {
-            if let ( #( Some(#args1) ),* ) = ( #( #args2.get_concrete() ),* ) {
-                return Value::Concrete(#name( #( #args3 ),* ));
-            }
-
-            let graph_opt = #graph_opt;
-            if let Some(graph_ref) = graph_opt {
-                #( let #sources1 = #args4.get_index(graph_ref.clone()); )*
-
-                let index = {
-                    let mut graph = graph_ref.borrow_mut();
-                    let index = graph.add_node(Node::Construct(TypeName::#upper));
-                    #( graph.add_edge(#sources2, index, #indices); )*
-                    index
-                };
-
-                return Value::Abstract {
-                    graph: graph_ref.clone(),
-                    index,
-                    ty: PhantomData,
-                };
-            }
-
-            unreachable!()
+            #func_impl
         }
     }
 }
@@ -340,12 +323,11 @@ fn type_matrix(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
         impl IntoValue for #name {
             type Output = #name;
 
-            fn get_concrete(&self) -> Option<Self::Output> {
-                Some(*self)
+            fn into_value(self) -> Value<#name> {
+                Value::Concrete(self)
             }
 
-            fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
-                let mut graph = graph.borrow_mut();
+            fn get_index(&self, mut graph: GraphRef) -> NodeIndex<u32> {
                 graph.add_node(Node::Constant(TypedValue::#name(self.0)))
             }
         }
@@ -369,46 +351,73 @@ pub fn type_structs() -> Vec<Tokens> {
             Some(quote! {
                 #decl
 
-                impl Input<#name> for Shader {
+                impl Input<#name> for Module {
                     #[inline]
                     fn input(&self, location: u32) -> Value<#name> {
                         let index = {
-                            let mut graph = self.graph.borrow_mut();
-                            graph.add_node(Node::Input(location, TypeName::#upper))
+                            let mut module = self.borrow_mut();
+                            module.main.add_node(Node::Input(location, TypeName::#upper))
                         };
 
                         Value::Abstract {
-                            graph: self.graph.clone(),
+                            module: self.clone(),
+                            function: FuncKind::Main,
                             index,
                             ty: PhantomData,
                         }
                     }
                 }
 
-                impl Uniform<#name> for Shader {
+                impl Uniform<#name> for Module {
                     #[inline]
                     fn uniform(&self, location: u32) -> Value<#name> {
                         let index = {
-                            let mut graph = self.graph.borrow_mut();
-                            graph.add_node(Node::Uniform(location, TypeName::#upper))
+                            let mut module = self.borrow_mut();
+                            module.main.add_node(Node::Uniform(location, TypeName::#upper))
                         };
 
                         Value::Abstract {
-                            graph: self.graph.clone(),
+                            module: self.clone(),
+                            function: FuncKind::Main,
                             index,
                             ty: PhantomData,
                         }
                     }
                 }
 
-                impl Output<#name> for Shader {
+                impl Output<#name> for Module {
                     #[inline]
                     fn output(&self, location: u32, source: Value<#name>) {
-                        let source = source.get_index(self.graph.clone());
+                        let src = match source {
+                            Value::Abstract { index, .. } => index,
+                            source @ Value::Concrete(_) => {
+                                let module = self.borrow_mut();
+                                let graph = FuncKind::Main.get_graph_mut(module);
+                                source.get_index(graph)
+                            },
+                        };
 
-                        let mut graph = self.graph.borrow_mut();
-                        let sink = graph.add_node(Node::Output(location, TypeName::#upper));
-                        graph.add_edge(source, sink, 0);
+                        let mut module = self.borrow_mut();
+                        let sink = module.main.add_node(Node::Output(location, TypeName::#upper));
+                        module.main.add_edge(src, sink, 0);
+                    }
+                }
+
+                impl<F> Parameter<#name> for Function<F> {
+                    #[inline]
+                    fn parameter(&self, location: u32) -> Value<#name> {
+                        let index = {
+                            let mut module = self.module.borrow_mut();
+                            let graph = &mut module[self.func];
+                            graph.add_node(Node::Parameter(location, TypeName::#upper))
+                        };
+
+                        Value::Abstract {
+                            module: self.module.clone(),
+                            function: FuncKind::Ref(self.func),
+                            index,
+                            ty: PhantomData,
+                        }
                     }
                 }
             })

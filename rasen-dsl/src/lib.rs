@@ -5,7 +5,7 @@
 //! # extern crate rasen_dsl;
 //! # use rasen_dsl::prelude::*;
 //! # fn main() {
-//! let shader = Shader::new();
+//! let shader = Module::new();
 //!
 //! let normal: Value<Vec3> = normalize(shader.input(0));
 //! let light = Vec3(0.3, -0.5, 0.2);
@@ -19,14 +19,14 @@
 //! # }
 //! ```
 
-#![feature(specialization, conservative_impl_trait)]
+#![cfg_attr(feature="functions", feature(fn_traits, unboxed_closures))]
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 
 extern crate rasen;
 
-pub mod types;
-pub mod value;
-pub mod shader;
+pub mod module;
 pub mod operations;
 pub mod prelude;
+pub mod types;
+pub mod value;

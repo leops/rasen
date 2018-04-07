@@ -2,7 +2,6 @@ extern crate rasen;
 extern crate rasen_dsl;
 
 use rasen_dsl::prelude::*;
-use rasen_dsl::value::IntoValue;
 
 include!("../../tests/dsl.rs");
 
@@ -38,13 +37,22 @@ fn test_run_basic_vert() {
         model.into()
     );
 
-    let Vec4(v_pos_x, v_pos_y, v_pos_z, v_pos_w) = v_pos.get_concrete().expect("v_pos is not concrete");
+    let Vec4(v_pos_x, v_pos_y, v_pos_z, v_pos_w) = match v_pos {
+        Value::Concrete(v) => v,
+        _ => panic!("v_pos is not concrete"),
+    };
     assert_eq!((v_pos_x, v_pos_y, v_pos_z, v_pos_w), (1.0, 2.0, 3.0, 1.0));
 
-    let Vec4(v_norm_x, v_norm_y, v_norm_z, v_norm_w) = v_norm.get_concrete().expect("v_norm is not concrete");
+    let Vec4(v_norm_x, v_norm_y, v_norm_z, v_norm_w) = match v_norm {
+        Value::Concrete(v) => v,
+        _ => panic!("v_norm is not concrete"),
+    };
     assert_eq!((v_norm_x, v_norm_y, v_norm_z, v_norm_w), (0.0, 1.0, 0.0, 1.0));
 
-    let Vec2(v_uv_x, v_uv_y) = v_uv.get_concrete().expect("v_uv is not concrete");
+    let Vec2(v_uv_x, v_uv_y) = match v_uv {
+        Value::Concrete(v) => v,
+        _ => panic!("v_uv is not concrete"),
+    };
     assert_eq!((v_uv_x, v_uv_y), (0.5, 0.5));
 }
 
@@ -58,6 +66,19 @@ fn test_run_basic_frag() {
         )),
     );
 
-    let Vec4(color_r, color_g, color_b, color_a) = color.get_concrete().expect("color is not concrete");
+    let Vec4(color_r, color_g, color_b, color_a) = match color {
+        Value::Concrete(v) => v,
+        _ => panic!("color is not concrete"),
+    };
     assert_eq!((color_r, color_g, color_b, color_a), (0.025, 0.0625, 0.1, 0.1));
+}
+
+#[test]
+fn test_run_functions() {
+    let result = functions(3.14f32.into());
+    let result = match result {
+        Value::Concrete(v) => v,
+        _ => panic!("result is not concrete"),
+    };
+    assert_eq!(result, 3.14f32);
 }

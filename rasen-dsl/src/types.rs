@@ -4,8 +4,8 @@ use rasen::prelude::{Node, TypeName, TypedValue, NodeIndex};
 
 use std::ops::Index;
 use std::marker::PhantomData;
-use value::{GraphRef, Value, IntoValue};
-use shader::{Shader, Input, Uniform, Output};
+use value::{GraphRef, Value, FuncKind, IntoValue};
+use module::{Module, Input, Uniform, Output, Function, Parameter};
 
 pub mod traits {
     use std::iter::Sum;
@@ -61,9 +61,8 @@ pub struct Sampler(pub Vec4);
 impl IntoValue for Sampler {
     type Output = Self;
 
-    /// Gets the concrete value of this value, if it is indeed concrete
-    fn get_concrete(&self) -> Option<Self::Output> {
-        Some(*self)
+    fn into_value(self) -> Value<Self> {
+        Value::Concrete(self)
     }
 
     /// Registers this value into a Graph and returns the node index
@@ -72,16 +71,17 @@ impl IntoValue for Sampler {
     }
 }
 
-impl Uniform<Sampler> for Shader {
+impl Uniform<Sampler> for Module {
     #[inline]
     fn uniform(&self, location: u32) -> Value<Sampler> {
         let index = {
-            let mut graph = self.graph.borrow_mut();
-            graph.add_node(Node::Uniform(location, TypeName::SAMPLER2D))
+            let mut module = self.borrow_mut();
+            module.main.add_node(Node::Uniform(location, TypeName::SAMPLER2D))
         };
 
         Value::Abstract {
-            graph: self.graph.clone(),
+            module: self.clone(),
+            function: FuncKind::Main,
             index,
             ty: PhantomData,
         }

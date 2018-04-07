@@ -42,7 +42,7 @@ fn vector_type(name: &str, scalar: &str, ty: &'static str, size: u32) -> Type {
     Type {
         name: Ident::from(name),
         category: Category::VECTOR,
-        component: Some(box scalar_type(scalar, ty)),
+        component: Some(Box::new(scalar_type(scalar, ty))),
         size: Some(size),
         ty: ty,
     }
@@ -52,7 +52,7 @@ fn matrix_type(name: &str, vec: &str, scalar: &str, ty: &'static str, size: u32)
     Type {
         name: Ident::from(name),
         category: Category::MATRIX,
-        component: Some(box vector_type(vec, scalar, ty, size)),
+        component: Some(Box::new(vector_type(vec, scalar, ty, size))),
         size: Some(size),
         ty: ty,
     }

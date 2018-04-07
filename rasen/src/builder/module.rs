@@ -1,9 +1,10 @@
-use std::mem;
-use std::collections::HashMap;
+use std::{mem, iter};
+use std::convert::TryFrom;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use petgraph::graph::{NodeIndex, Graph as PetGraph};
 use petgraph::algo::toposort;
+use fnv::FnvHashMap as HashMap;
 
 use spirv_headers::ExecutionModel as ShaderType;
 use spirv_headers::*;
@@ -15,7 +16,10 @@ use rspirv::mr::{
 
 use graph::*;
 use errors::*;
+use module::{FunctionRef, Module as RasenModule};
 use types::{TypeName, TypedValue};
+use super::Builder;
+use super::function::*;
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 enum CachedConstant {
@@ -62,7 +66,7 @@ impl CachedConstant {
 fn sort_instructions(unsorted: &[Instruction]) -> Result<Vec<Instruction>> {
     let mut decl_graph = PetGraph::new();
 
-    let mut node_map = HashMap::new();
+    let mut node_map = HashMap::default();
     for inst in unsorted {
         let index = decl_graph.add_node(inst);
         if let Some(id) = inst.result_id {
@@ -72,17 +76,17 @@ fn sort_instructions(unsorted: &[Instruction]) -> Result<Vec<Instruction>> {
 
     for inst in unsorted {
         if let Some(id) = inst.result_id {
-            let self_node = &node_map[&id];
+            let self_node = node_map[&id];
 
             if let Some(id) = inst.result_type {
-                let other = &node_map[&id];
-                decl_graph.add_edge(*other, *self_node, ());
+                let other = node_map[&id];
+                decl_graph.add_edge(other, self_node, ());
             }
 
             for op in &inst.operands {
                 if let Operand::IdRef(ref id) = *op {
-                    let other = &node_map[id];
-                    decl_graph.add_edge(*other, *self_node, ());
+                    let other = node_map[id];
+                    decl_graph.add_edge(other, self_node, ());
                 }
             }
         }
@@ -98,17 +102,7 @@ fn sort_instructions(unsorted: &[Instruction]) -> Result<Vec<Instruction>> {
                         class: inst.class,
                         result_type: inst.result_type,
                         result_id: inst.result_id,
-                        operands: inst.operands.iter()
-                            .map(|op| match *op {
-                                Operand::IdRef(id) => Operand::IdRef(id),
-                                Operand::LiteralInt32(val) => Operand::LiteralInt32(val),
-                                Operand::LiteralFloat32(val) => Operand::LiteralFloat32(val),
-                                Operand::StorageClass(output) => Operand::StorageClass(output),
-                                Operand::Dim(dim) => Operand::Dim(dim),
-                                Operand::ImageFormat(format) => Operand::ImageFormat(format),
-                                _ => panic!("unimplemented Operand::{:?}", op),
-                            })
-                            .collect(),
+                        operands: inst.operands.clone(),
                     }
                 })
                 .collect()
@@ -118,17 +112,18 @@ fn sort_instructions(unsorted: &[Instruction]) -> Result<Vec<Instruction>> {
 
 /// Builder struct used to define a SPIR-V module
 #[derive(Debug)]
-pub struct Builder {
+pub struct ModuleBuilder {
     mod_type: ShaderType,
     counter: AtomicUsize,
 
-    pub inputs: Vec<Word>,
-    pub outputs: Vec<Word>,
+    inputs: Vec<Word>,
+    outputs: Vec<Word>,
 
     imports: HashMap<&'static str, (Word, Instruction)>,
 
-    module: Module,
+    pub(crate) module: Module,
     instructions: Vec<Instruction>,
+    pub(crate) functions: Vec<(Word, Vec<&'static TypeName>, Option<&'static TypeName>, Function)>,
 
     uniform: Option<(Word, Word)>,
     uniforms: HashMap<Word, (Word, &'static TypeName)>,
@@ -138,17 +133,17 @@ pub struct Builder {
     results: HashMap<NodeIndex<Word>, (&'static TypeName, Word)>,
 }
 
-const VOID_ID: Word = 1;
+pub const VOID_ID: Word = 1;
 const FUNC_ID: Word = 2;
 const LABEL_ID: Word = 3;
 const ENTRY_ID: Word = 4;
 
 include!(concat!(env!("OUT_DIR"), "/builder.rs"));
 
-impl Builder {
+impl ModuleBuilder {
     /// Create a new shader builder with some predefined base values
-    pub fn new(mod_type: ShaderType) -> Builder {
-        Builder {
+    pub fn new(mod_type: ShaderType) -> ModuleBuilder {
+        ModuleBuilder {
             mod_type: mod_type,
             counter: AtomicUsize::new(5),
 
@@ -209,7 +204,9 @@ impl Builder {
 
                 .. Module::new()
             },
+
             instructions: Vec::new(),
+            functions: Vec::new(),
 
             uniform: None,
             uniforms: Default::default(),
@@ -220,13 +217,13 @@ impl Builder {
         }
     }
 
-    /// Create a new Builder and add instructions to it based on a Graph
-    pub fn from_graph(graph: &Graph, mod_type: ShaderType) -> Result<Builder> {
+    /// Create a new ModuleBuilder and add instructions to it based on a Graph
+    pub fn from_graph(graph: &Graph, mod_type: ShaderType) -> Result<ModuleBuilder> {
         if graph.has_cycle() {
             bail!(ErrorKind::CyclicGraph);
         }
 
-        let mut program = Builder::new(mod_type);
+        let mut program = ModuleBuilder::new(mod_type);
         for node in graph.outputs() {
             program.visit(graph, node)?;
         }
@@ -234,10 +231,28 @@ impl Builder {
         Ok(program)
     }
 
-    /// Acquire a new identifier to be used in the module
-    #[inline]
-    pub fn get_id(&mut self) -> Word {
-        self.counter.fetch_add(1, Ordering::SeqCst) as Word
+    /// Create a new ModuleBuilder and add instructions to it based on a Module
+    pub fn from_module(module: &RasenModule, mod_type: ShaderType) -> Result<ModuleBuilder> {
+        if module.main.has_cycle() {
+            bail!(ErrorKind::CyclicGraph);
+        }
+
+        let mut program = ModuleBuilder::new(mod_type);
+        for function in &module.functions {
+            let mut proxy = FunctionBuilder::new(&mut program);
+
+            for node in function.outputs() {
+                proxy.visit(function, node)?;
+            }
+
+            proxy.build();
+        }
+
+        for node in module.main.outputs() {
+            program.visit(&module.main, node)?;
+        }
+
+        Ok(program)
     }
 
     fn get_uniform_block(&mut self) -> (Word, Word) {
@@ -314,8 +329,203 @@ impl Builder {
             .collect()
     }
 
+    /// Build the module, returning a list of instructions
+    pub fn build(mut self) -> Result<Module> {
+        let mut uniforms: Vec<(Word, Word, &'static TypeName)> = {
+            self.uniforms.iter()
+                .map(|(k, &(a, b))| (*k, a, b))
+                .collect()
+        };
+
+        uniforms.sort_by_key(|&(k, _, _)| k);
+
+        Ok(Module {
+            header: Some(
+                ModuleHeader {
+                    magic_number: MAGIC_NUMBER,
+                    version: (MAJOR_VERSION << 16) | (MAJOR_VERSION << 8),
+                    generator: 0xffff_0009,
+                    bound: self.bound(),
+                    reserved_word: 0,
+                },
+            ),
+
+            ext_inst_imports:
+                self.imports.into_iter()
+                    .map(|(_, (_, op))| op)
+                    .collect(),
+
+            entry_points: vec![
+                Instruction::new(
+                    Op::EntryPoint,
+                    None, None,
+                    {
+                        let mut res = Vec::with_capacity(
+                            self.inputs.len() +
+                            self.outputs.len() +
+                            3
+                        );
+
+                        res.push(Operand::ExecutionModel(self.mod_type));
+                        res.push(Operand::IdRef(ENTRY_ID));
+                        res.push(Operand::LiteralString("main".into()));
+
+                        res.extend(
+                            self.inputs.into_iter().map(Operand::IdRef)
+                        );
+                        res.extend(
+                            self.outputs.into_iter().map(Operand::IdRef)
+                        );
+
+                        res
+                    }
+                )
+            ],
+
+            annotations: {
+                let mut res = self.module.annotations;
+
+                if let Some((ty_id, _)) = self.uniform {
+                    let mut offset = 0;
+                    for &(location, _, type_id) in &uniforms {
+                        res.push(
+                            Instruction::new(
+                                Op::MemberDecorate,
+                                None, None,
+                                vec![
+                                    Operand::IdRef(ty_id),
+                                    Operand::LiteralInt32(location),
+                                    Operand::Decoration(Decoration::Offset),
+                                    Operand::LiteralInt32(offset),
+                                ]
+                            )
+                        );
+
+                        offset += type_id.size();
+                    }
+                }
+
+                res
+            },
+
+            types_global_values: {
+                let mut declarations = Vec::with_capacity(
+                    self.module.types_global_values.len() + 1
+                );
+
+                // Uniforms
+                if let Some((ty_id, _)) = self.uniform {
+                    declarations.push(
+                        Instruction::new(
+                            Op::TypeStruct,
+                            None,
+                            Some(ty_id),
+                            uniforms.into_iter()
+                                .map(|(_, v, _)| Operand::IdRef(v))
+                                .collect()
+                        )
+                    );
+                }
+
+                // Declarations
+                declarations.append(&mut self.module.types_global_values);
+                sort_instructions(&declarations)?
+            },
+
+            // Functions
+            functions: {
+                iter::once(Function {
+                    def: Some(
+                        Instruction::new(
+                            Op::Function,
+                            Some(VOID_ID),
+                            Some(ENTRY_ID),
+                            vec![
+                                Operand::FunctionControl(FunctionControl::empty()),
+                                Operand::IdRef(FUNC_ID),
+                            ]
+                        )
+                    ),
+                    end: Some(
+                        Instruction::new(
+                            Op::FunctionEnd,
+                            None, None,
+                            Vec::new()
+                        )
+                    ),
+                    parameters: Vec::new(),
+                    basic_blocks: vec![
+                        BasicBlock {
+                            label: Some(
+                                Instruction::new(
+                                    Op::Label,
+                                    None,
+                                    Some(LABEL_ID),
+                                    Vec::new()
+                                )
+                            ),
+                            instructions: {
+                                let mut res = self.instructions;
+                                res.push(
+                                    Instruction::new(
+                                        Op::Return,
+                                        None, None,
+                                        Vec::new()
+                                    )
+                                );
+
+                                res
+                            }
+                        }
+                    ],
+                })
+                .chain(
+                    self.functions.into_iter()
+                        .map(|(_, _, _, func)| func)
+                )
+                .collect()
+            },
+
+            .. self.module
+        })
+    }
+
+    /// Get the instructions of the module in assembly form
+    pub fn into_assembly(self) -> Result<String> {
+        Ok(self.build()?.disassemble())
+    }
+
+    /// Get the instructions of the module in words form
+    pub fn into_words(self) -> Result<Vec<u32>> {
+        Ok(self.build()?.assemble())
+    }
+
+    /// Get the instructions of the module in binary form
+    pub fn into_binary(self) -> Result<Vec<u8>> {
+        let mut res = self.into_words()?;
+        let ptr = res.as_mut_ptr();
+        let len = res.len().checked_mul(4).ok_or("Integer overflow")?;
+        let cap = res.capacity().checked_mul(4).ok_or("Integer overflow")?;
+
+        Ok(unsafe {
+            mem::forget(res);
+            Vec::from_raw_parts(
+                mem::transmute(ptr),
+                len, cap,
+            )
+        })
+    }
+}
+
+impl Builder for ModuleBuilder {
+    /// Acquire a new identifier to be used in the module
+    #[inline]
+    fn get_id(&mut self) -> Word {
+        self.counter.fetch_add(1, Ordering::SeqCst) as Word
+    }
+
     /// Import an instruction set to the module, returning its ID
-    pub fn import_set(&mut self, name: &'static str) -> Word {
+    fn import_set(&mut self, name: &'static str) -> Word {
         if let Some(&(id, _)) = self.imports.get(&name) {
             return id;
         }
@@ -337,12 +547,14 @@ impl Builder {
     }
 
     /// Get the ID corresponding to a Type
-    pub fn register_type(&mut self, type_id: &'static TypeName) -> Word {
+    fn register_type(&mut self, type_id: &'static TypeName) -> Word {
         if let Some(reg_id) = self.types.get(type_id) {
             return *reg_id;
         }
 
         let res_id = match *type_id {
+            TypeName::Void => VOID_ID,
+
             TypeName::Bool => {
                 let bool_id = self.get_id();
 
@@ -472,7 +684,7 @@ impl Builder {
     }
 
     /// Add a new constant to the module, returning its ID
-    pub fn register_constant(&mut self, constant: &TypedValue) -> Result<u32> {
+    fn register_constant(&mut self, constant: &TypedValue) -> Result<u32> {
         let cache = match *constant {
             TypedValue::Bool(v) => Some(CachedConstant::Bool(v)),
             TypedValue::Int(v) => Some(CachedConstant::Int(v)),
@@ -496,7 +708,7 @@ impl Builder {
         Ok(id)
     }
 
-    pub fn register_uniform(&mut self, location: u32, type_id: &'static TypeName) -> Word {
+    fn register_uniform(&mut self, location: u32, type_id: &'static TypeName) -> Word {
         let (_, var_id) = self.get_uniform_block();
 
         let ty_id = self.register_type(type_id);
@@ -505,220 +717,57 @@ impl Builder {
         var_id
     }
 
-    pub fn push_annotation(&mut self, inst: Instruction) {
-        self.module.annotations.push(inst);
-    }
-
-    pub fn push_declaration(&mut self, inst: Instruction) {
-        self.module.types_global_values.push(inst);
-    }
-
-    pub fn push_instruction(&mut self, inst: Instruction) {
+    fn push_instruction(&mut self, inst: Instruction) {
         self.instructions.push(inst);
     }
 
-    fn visit(&mut self, graph: &Graph, index: NodeIndex<u32>) -> Result<(&'static TypeName, u32)> {
-        if let Some(res) = self.results.get(&index) {
-            return Ok(*res);
-        }
+    fn push_declaration(&mut self, inst: Instruction) {
+        self.module.types_global_values.push(inst);
+    }
 
-        let args: Result<Vec<_>> = {
-            graph.arguments(index)
-                .map(|edge| self.visit(graph, edge))
-                .collect()
-        };
+    fn push_output(&mut self, id: Word) {
+        self.outputs.push(id);
+    }
 
-        let node = &graph[index];
-        let res = {
-            node.get_result(self, args?)
-                .chain_err(|| {
-                    ErrorKind::BuildError(node.to_string(), index.index())
-                })?
-        };
+    fn push_input(&mut self, id: Word) {
+        self.inputs.push(id);
+    }
 
+    fn push_annotation(&mut self, inst: Instruction) {
+        self.module.annotations.push(inst);
+    }
+    
+    fn push_parameter(&mut self, _: Word, _: &'static TypeName, _: Instruction) -> Result<()> {
+        bail!(ErrorKind::UnsupportedOperation("Parameter"))
+    }
+
+    fn set_return(&mut self, _: &'static TypeName, _: Instruction) -> Result<()> {
+        bail!(ErrorKind::UnsupportedOperation("Return"))
+    }
+
+    fn get_result(&self, index: &NodeIndex<u32>) -> Option<(&'static TypeName, u32)> {
+        self.results.get(index).cloned()
+    }
+
+    fn set_result(&mut self, index: NodeIndex<u32>, res: (&'static TypeName, u32)) {
         self.results.insert(index, res);
-        Ok(res)
     }
 
-    /// Build the module, returning a list of instructions
-    pub fn build(mut self) -> Result<Module> {
-        let mut uniforms: Vec<(Word, Word, &'static TypeName)> = {
-            self.uniforms.iter()
-                .map(|(k, &(a, b))| (*k, a, b))
-                .collect()
-        };
-
-        uniforms.sort_by_key(|&(k, _, _)| k);
-
-        Ok(Module {
-            header: Some(
-                ModuleHeader {
-                    magic_number: MAGIC_NUMBER,
-                    version: (MAJOR_VERSION << 16) | (MAJOR_VERSION << 8),
-                    generator: 0xffff_0009,
-                    bound: self.bound(),
-                    reserved_word: 0,
-                },
-            ),
-
-            ext_inst_imports:
-                self.imports.into_iter()
-                    .map(|(_, (_, op))| op)
-                    .collect(),
-
-            entry_points: vec![
-                Instruction::new(
-                    Op::EntryPoint,
-                    None, None,
-                    {
-                        let mut res = Vec::with_capacity(
-                            self.inputs.len() +
-                            self.outputs.len() +
-                            3
-                        );
-
-                        res.push(Operand::ExecutionModel(self.mod_type));
-                        res.push(Operand::IdRef(ENTRY_ID));
-                        res.push(Operand::LiteralString("main".into()));
-
-                        res.extend(
-                            self.inputs.into_iter().map(Operand::IdRef)
-                        );
-                        res.extend(
-                            self.outputs.into_iter().map(Operand::IdRef)
-                        );
-
-                        res
-                    }
-                )
-            ],
-
-            annotations: {
-                let mut res = self.module.annotations;
-
-                if let Some((ty_id, _)) = self.uniform {
-                    let mut offset = 0;
-                    for &(location, _, type_id) in &uniforms {
-                        res.push(
-                            Instruction::new(
-                                Op::MemberDecorate,
-                                None, None,
-                                vec![
-                                    Operand::IdRef(ty_id),
-                                    Operand::LiteralInt32(location),
-                                    Operand::Decoration(Decoration::Offset),
-                                    Operand::LiteralInt32(offset),
-                                ]
-                            )
-                        );
-
-                        offset += type_id.size();
-                    }
-                }
-
-                res
-            },
-
-            types_global_values: {
-                let mut declarations = Vec::with_capacity(
-                    self.module.types_global_values.len() + 1
-                );
-
-                // Uniforms
-                if let Some((ty_id, _)) = self.uniform {
-                    declarations.push(
-                        Instruction::new(
-                            Op::TypeStruct,
-                            None,
-                            Some(ty_id),
-                            uniforms.into_iter()
-                                .map(|(_, v, _)| Operand::IdRef(v))
-                                .collect()
-                        )
-                    );
-                }
-
-                // Declarations
-                declarations.append(&mut self.module.types_global_values);
-                sort_instructions(&declarations)?
-            },
-
-            // Functions
-            functions: vec![
-                Function {
-                    def: Some(
-                        Instruction::new(
-                            Op::Function,
-                            Some(VOID_ID),
-                            Some(ENTRY_ID),
-                            vec![
-                                Operand::FunctionControl(FunctionControl::empty()),
-                                Operand::IdRef(FUNC_ID),
-                            ]
-                        )
-                    ),
-                    end: Some(
-                        Instruction::new(
-                            Op::FunctionEnd,
-                            None, None,
-                            Vec::new()
-                        )
-                    ),
-                    parameters: Vec::new(),
-                    basic_blocks: vec![
-                        BasicBlock {
-                            label: Some(
-                                Instruction::new(
-                                    Op::Label,
-                                    None,
-                                    Some(LABEL_ID),
-                                    Vec::new()
-                                )
-                            ),
-                            instructions: {
-                                let mut res = self.instructions;
-                                res.push(
-                                    Instruction::new(
-                                        Op::Return,
-                                        None, None,
-                                        Vec::new()
-                                    )
-                                );
-
-                                res
-                            }
-                        }
-                    ],
-                },
-            ],
-
-            .. self.module
-        })
+    fn get_function(&self, index: FunctionRef) -> Option<(Word, &[&'static TypeName], Option<&'static TypeName>)> {
+        self.functions.get(index.0).map(|&(id, ref args, res, _)| (id, args as &[_], res))
     }
+}
 
-    /// Get the instructions of the module in assembly form
-    pub fn into_assembly(self) -> Result<String> {
-        Ok(self.build()?.disassemble())
+impl<'a> TryFrom<(&'a Graph, ShaderType)> for ModuleBuilder {
+    type Error = Error;
+    fn try_from((graph, mod_type): (&'a Graph, ShaderType)) -> Result<ModuleBuilder> {
+        ModuleBuilder::from_graph(graph, mod_type)
     }
+}
 
-    /// Get the instructions of the module in words form
-    pub fn into_words(self) -> Result<Vec<u32>> {
-        Ok(self.build()?.assemble())
-    }
-
-    /// Get the instructions of the module in binary form
-    pub fn into_binary(self) -> Result<Vec<u8>> {
-        let mut res = self.into_words()?;
-        let ptr = res.as_mut_ptr();
-        let len = res.len().checked_mul(4).ok_or("Integer overflow")?;
-        let cap = res.capacity().checked_mul(4).ok_or("Integer overflow")?;
-
-        Ok(unsafe {
-            mem::forget(res);
-            Vec::from_raw_parts(
-                mem::transmute(ptr),
-                len, cap,
-            )
-        })
+impl<'a> TryFrom<(&'a RasenModule, ShaderType)> for ModuleBuilder {
+    type Error = Error;
+    fn try_from((module, mod_type): (&'a RasenModule, ShaderType)) -> Result<ModuleBuilder> {
+        ModuleBuilder::from_module(module, mod_type)
     }
 }

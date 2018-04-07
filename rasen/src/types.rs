@@ -4,6 +4,7 @@ use spirv_headers::Dim;
 /// Describes a SPIR-V data type
 #[derive(Eq, PartialEq, Hash)]
 pub enum TypeName {
+    Void,
     /// Basic boolean type
     Bool,
     /// Integer type, signed or not
@@ -21,6 +22,7 @@ pub enum TypeName {
 include!(concat!(env!("OUT_DIR"), "/types.rs"));
 
 impl TypeName {
+    pub const VOID: &'static TypeName = &TypeName::Void;
     pub const BOOL: &'static TypeName = &TypeName::Bool;
     pub const INT: &'static TypeName = &TypeName::Int(true);
     pub const UINT: &'static TypeName = &TypeName::Int(false);
@@ -70,6 +72,7 @@ impl TypeName {
     #[inline]
     pub fn size(&self) -> u32 {
         match *self {
+            TypeName::Void |
             TypeName::Sampler(_, _) => 0,
 
             TypeName::Bool |
@@ -98,6 +101,7 @@ fn print_type_prefix(f: &mut fmt::Formatter, ty: &TypeName) -> fmt::Result {
 impl fmt::Debug for TypeName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            TypeName::Void => write!(f, "void"),
             TypeName::Bool => write!(f, "bool"),
             TypeName::Int(true) => write!(f, "int"),
             TypeName::Int(false) => write!(f, "uint"),

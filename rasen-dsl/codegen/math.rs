@@ -3,6 +3,7 @@
 use quote::{Ident, Tokens};
 use codegen::defs::{Category, Node, all_nodes};
 use codegen::mul::impl_mul_variant;
+use codegen::operations::match_values;
 
 pub fn construct_type(ty: Node) -> Tokens {
     let Node { name, args, .. } = ty;
@@ -37,7 +38,7 @@ fn impl_math_variant((trait_id, node_id, operator): (Ident, Ident, Ident), left_
             match lc {
                 Category::MATRIX => unreachable!(),
                 Category::SCALAR => quote! {
-                    return (left_val #operator right_val).into();
+                    (lhs #operator rhs).into()
                 },
                 Category::VECTOR => {
                     let result = left_res.name.clone();
@@ -61,9 +62,9 @@ fn impl_math_variant((trait_id, node_id, operator): (Ident, Ident, Ident), left_
                     };
 
                     quote! {
-                        let #result( #( #l_fields ),* ) = left_val;
-                        let #result( #( #r_fields ),* ) = right_val;
-                        return #result( #( #res_fields ),* ).into();
+                        let #result( #( #l_fields ),* ) = lhs;
+                        let #result( #( #r_fields ),* ) = rhs;
+                        #result( #( #res_fields ),* ).into()
                     }
                 },
             }
@@ -76,37 +77,25 @@ fn impl_math_variant((trait_id, node_id, operator): (Ident, Ident, Ident), left_
     let right_type = construct_type(right_type);
     let method = Ident::from(trait_id.to_string().to_lowercase());
 
+    let method_impl = match_values(
+        &[Ident::from("lhs"), Ident::from("rhs")],
+        &op_impl,
+        quote! {
+            let index = graph.add_node(Node::#node_id);
+            graph.add_edge(lhs, index, 0);
+            graph.add_edge(rhs, index, 1);
+            index
+        },
+    );
+
     let tokens = quote! {
         impl #trait_id<#right_type> for #left_type {
             type Output = Value<#result>;
 
             #[inline]
             fn #method(self, rhs: #right_type) -> Self::Output {
-                if let (Some(left_val), Some(right_val)) = (self.get_concrete(), rhs.get_concrete()) {
-                    #op_impl
-                }
-
-                let graph_opt = self.get_graph().or(rhs.get_graph());
-                if let Some(graph_ref) = graph_opt {
-                    let left_src = self.get_index(graph_ref.clone());
-                    let right_src = rhs.get_index(graph_ref.clone());
-
-                    let index = {
-                        let mut graph = graph_ref.borrow_mut();
-                        let index = graph.add_node(Node::#node_id);
-                        graph.add_edge(left_src, index, 0);
-                        graph.add_edge(right_src, index, 1);
-                        index
-                    };
-
-                    return Value::Abstract {
-                        graph: graph_ref.clone(),
-                        index,
-                        ty: PhantomData,
-                    };
-                }
-
-                unreachable!()
+                let lhs = self;
+                #method_impl
             }
         }
     };

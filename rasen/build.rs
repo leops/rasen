@@ -1,5 +1,4 @@
 #![recursion_limit = "128"]
-#![feature(inclusive_range_syntax)]
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 
@@ -137,7 +136,7 @@ fn types(out_dir: &str) {
         });
     }
 
-    for size in 2u32..=4u32 {
+    for size in 2u32..5u32 {
         for &(name, prefix, ty) in INTS.iter().chain(FLOATS.iter()) {
             let type_variant = format!("{}Vec{}", prefix.to_string().to_uppercase(), size);
             let const_name = quote::Ident::from(type_variant.to_uppercase());
@@ -454,6 +453,10 @@ fn nodes(out_dir: &str) {
             /// Takes a single argument (only vector types are supported)
             Extract(u32),
 
+            Call(FunctionRef),
+            Parameter(u32, &'static TypeName),
+            Return,
+
             #( #node_variants ),*
         }
 
@@ -468,6 +471,9 @@ fn nodes(out_dir: &str) {
                     Node::Constant(..) => "Constant",
                     Node::Construct(..) => "Construct",
                     Node::Extract(..) => "Extract",
+                    Node::Call(..) => "Call",
+                    Node::Parameter(..) => "Parameter",
+                    Node::Return => "Return",
                     #( #to_string_arms ),*
                 }
             }

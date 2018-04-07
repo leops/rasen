@@ -1,0 +1,30 @@
+; SPIR-V
+; Version: 1.1
+; Generator: Unknown
+; Bound: 16
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %4 "main" %11 %15
+OpExecutionMode %4 OriginUpperLeft
+OpDecorate %11 Location 0
+OpDecorate %15 Location 0
+%6 = OpTypeFloat 32
+%14 = OpTypePointer Output %6
+%15 = OpVariable  %14  Output
+%10 = OpTypePointer Input %6
+%11 = OpVariable  %10  Input
+%9 = OpTypeFunction %6 %6
+%1 = OpTypeVoid
+%2 = OpTypeFunction %1
+%4 = OpFunction  %1  None %2
+%3 = OpLabel
+%12 = OpLoad  %6  %11 None
+%13 = OpFunctionCall  %6  %5 %12
+OpStore %15 %13 None
+OpReturn
+OpFunctionEnd
+%5 = OpFunction  %6  None %9
+%7 = OpFunctionParameter  %6 
+%8 = OpLabel
+OpReturnValue %7
+OpFunctionEnd

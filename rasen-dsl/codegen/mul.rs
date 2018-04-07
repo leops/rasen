@@ -3,6 +3,7 @@
 use quote::{Ident, Tokens};
 use codegen::defs::{Category, Node};
 use codegen::math::construct_type;
+use codegen::operations::match_values;
 
 fn impl_vector_times_scalar(result: Ident, size: u32, vector: Tokens, scalar: Tokens) -> Tokens {
     let v_fields: Vec<_> = {
@@ -21,38 +22,35 @@ fn impl_vector_times_scalar(result: Ident, size: u32, vector: Tokens, scalar: To
     quote! {
         let #result( #( #v_fields ),* ) = #vector;
         let other = #scalar;
-        return #result( #( #res_fields ),* ).into();
+        #result( #( #res_fields ),* ).into()
     }
 }
 
 fn impl_vector_times_matrix(result: Ident, size: u32, vector: Tokens, matrix: Tokens) -> Tokens {
-    let v_fields: Vec<_> = {
+    let v_fields = {
         (0..size)
             .map(|i| Ident::from(format!("v_{}", i)))
-            .collect()
     };
-    let res_fields: Vec<_> = {
+    let res_fields = {
         (0..size)
             .map(|i| {
-                let sum: Vec<_> = {
+                let sum = {
                     (0..size)
                         .map(|j| {
                             let f = Ident::from(format!("v_{}", j));
                             let index = ((i * size) + j) as usize;
                             quote! { #f * matrix[#index] }
                         })
-                        .collect()
                 };
 
                 quote! { #( #sum )+* }
             })
-            .collect()
     };
 
     quote! {
         let #result( #( #v_fields ),* ) = #vector;
         let matrix = #matrix;
-        return #result( #( #res_fields ),* ).into();
+        #result( #( #res_fields ),* ).into()
     }
 }
 
@@ -71,7 +69,7 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
             match lc {
                 Category::SCALAR => {
                     quote! {
-                        return (left_val * right_val).into();
+                        (lhs * rhs).into()
                     }
                 },
                 Category::VECTOR => {
@@ -96,24 +94,38 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                     };
 
                     quote! {
-                        let #result( #( #l_fields ),* ) = left_val;
-                        let #result( #( #r_fields ),* ) = right_val;
-                        return #result( #( #res_fields ),* ).into();
+                        let #result( #( #l_fields ),* ) = lhs;
+                        let #result( #( #r_fields ),* ) = rhs;
+                        #result( #( #res_fields ),* ).into()
                     }
                 },
                 Category::MATRIX => {
                     let result = left_res.name.clone();
                     let size = left_res.size.unwrap() as usize;
                     let res_fields: Vec<_> = {
-                        (0..(size*size))
-                            .map(|i| quote! { left_mat[#i] * right_mat[#i] })
+                        (0..size)
+                            .flat_map(|i| {
+                                (0..size)
+                                    .map(move |j| {
+                                        let sum = {
+                                            (0..size)
+                                                .map(|k| {
+                                                    let l = i * size + k;
+                                                    let r = k * size + j;
+                                                    quote! { left_mat[#l] * right_mat[#r] }
+                                                })
+                                        };
+
+                                        quote! { #( #sum )+* }
+                                    })
+                            })
                             .collect()
                     };
 
                     quote! {
-                        let left_mat = left_val.0;
-                        let right_mat = right_val.0;
-                        return #result([ #( #res_fields ),* ]).into();
+                        let left_mat = lhs.0;
+                        let right_mat = rhs.0;
+                        #result( #res_fields ).into()
                     }
                 },
             }
@@ -127,15 +139,15 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                     impl_vector_times_scalar(
                         left_res.name.clone(),
                         left_res.size.unwrap(),
-                        quote! { left_val },
-                        quote! { right_val },
+                        quote! { lhs },
+                        quote! { rhs },
                     )
                 },
                 Category::MATRIX => impl_vector_times_matrix(
                     left_res.name.clone(),
                     left_res.size.unwrap(),
-                    quote! { left_val },
-                    quote! { right_val.0 },
+                    quote! { lhs },
+                    quote! { rhs.0 },
                 ),
             }
         ),
@@ -147,15 +159,15 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
                     impl_vector_times_scalar(
                         right_res.name.clone(),
                         right_res.size.unwrap(),
-                        quote! { right_val },
-                        quote! { left_val },
+                        quote! { rhs },
+                        quote! { lhs },
                     )
                 },
                 Category::MATRIX => impl_vector_times_matrix(
                     right_res.name.clone(),
                     right_res.size.unwrap(),
-                    quote! { right_val },
-                    quote! { left_val.0 },
+                    quote! { rhs },
+                    quote! { lhs.0 },
                 ),
             }
         ),
@@ -166,37 +178,25 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<Tokens> {
     let left_type = construct_type(left_type);
     let right_type = construct_type(right_type);
 
+    let func_impl = match_values(
+        &[Ident::from("lhs"), Ident::from("rhs")],
+        &mul_impl,
+        quote! {
+            let index = graph.add_node(Node::Multiply);
+            graph.add_edge(lhs, index, 0);
+            graph.add_edge(rhs, index, 1);
+            index
+        },
+    );
+
     Some(quote! {
         impl Mul<#right_type> for #left_type {
             type Output = Value<#result>;
 
             #[inline]
             fn mul(self, rhs: #right_type) -> Self::Output {
-                if let (Some(left_val), Some(right_val)) = (self.get_concrete(), rhs.get_concrete()) {
-                    #mul_impl
-                }
-
-                let graph_opt = self.get_graph().or(rhs.get_graph());
-                if let Some(graph_ref) = graph_opt {
-                    let left_src = self.get_index(graph_ref.clone());
-                    let right_src = rhs.get_index(graph_ref.clone());
-
-                    let index = {
-                        let mut graph = graph_ref.borrow_mut();
-                        let index = graph.add_node(Node::Multiply);
-                        graph.add_edge(left_src, index, 0);
-                        graph.add_edge(right_src, index, 1);
-                        index
-                    };
-
-                    return Value::Abstract {
-                        graph: graph_ref.clone(),
-                        index,
-                        ty: PhantomData,
-                    };
-                }
-
-                unreachable!()
+                let lhs = self;
+                #func_impl
             }
         }
     })

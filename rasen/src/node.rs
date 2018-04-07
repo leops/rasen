@@ -1,12 +1,13 @@
 //! Definition and implentations of all the graph operations
 
-use std::fmt;
+use std::{fmt, iter};
 use spirv_headers::*;
 use rspirv::mr::{
     Instruction, Operand
 };
 
 use builder::Builder;
+use module::FunctionRef;
 use types::*;
 use errors::*;
 use operations;
@@ -15,7 +16,7 @@ include!(concat!(env!("OUT_DIR"), "/node.rs"));
 
 impl Node {
     /// Insert this Node into a Program
-    pub fn get_result(&self, module: &mut Builder, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+    pub fn get_result<B>(&self, module: &mut B, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> where B: Builder {
         // use spirv_headers::GLOp::*;
 
         macro_rules! impl_glsl_call {
@@ -64,7 +65,7 @@ impl Node {
 
                 let (arg_type, arg_value) = args[0];
                 if arg_type != attr_type {
-                    bail!(ErrorKind::BadArguments(box [ arg_type ]));
+                    bail!(ErrorKind::BadArguments(Box::new([ arg_type ])));
                 }
 
                 let type_id = module.register_type(attr_type);
@@ -84,7 +85,7 @@ impl Node {
 
                 let var_id = module.get_id();
 
-                module.outputs.push(var_id);
+                module.push_output(var_id);
 
                 module.push_declaration(
                     Instruction::new(
@@ -143,7 +144,7 @@ impl Node {
 
                 let var_id = module.get_id();
 
-                module.inputs.push(var_id);
+                module.push_input(var_id);
 
                 module.push_declaration(
                     Instruction::new(
@@ -235,6 +236,85 @@ impl Node {
 
             Node::Constant(ref const_type) => Ok((const_type.to_type_name(), module.register_constant(const_type)?)),
 
+            Node::Call(index) => {
+                let (result, args) = {
+                    let (func_id, args_type, result_type) = if let Some(res) = module.get_function(index) {
+                        res
+                    } else {
+                        bail!(ErrorKind::MissingFunction(index))
+                    };
+
+                    (
+                        result_type,
+                        iter::once(Ok(Operand::IdRef(func_id)))
+                            .chain(
+                                args.into_iter()
+                                    .zip(args_type)
+                                    .map(|((val, id), arg)| {
+                                        if val == *arg {
+                                            Ok(Operand::IdRef(id))
+                                        } else {
+                                            bail!(ErrorKind::BadArguments(Box::new([ val ])));
+                                        }
+                                    })
+                            )
+                            .collect::<Result<_>>()?,
+                    )
+                };
+
+                let type_id = result.map(|ty| module.register_type(ty));
+
+                let res_id = module.get_id();
+                module.push_instruction(
+                    Instruction::new(
+                        Op::FunctionCall,
+                        type_id,
+                        Some(res_id),
+                        args,
+                    )
+                );
+
+                Ok((result.unwrap_or(TypeName::VOID), res_id))
+            },
+
+            Node::Parameter(location, attr_type) => {
+                let type_id = module.register_type(attr_type);
+
+                let res_id = module.get_id();
+                module.push_parameter(
+                    location, attr_type,
+                    Instruction::new(
+                        Op::FunctionParameter,
+                        Some(type_id),
+                        Some(res_id),
+                        Vec::new(),
+                    )
+                )?;
+
+                Ok((attr_type, res_id))
+            },
+
+            Node::Return => {
+                if args.len() != 1 {
+                    bail!(ErrorKind::WrongArgumentsCount(args.len(), 1));
+                }
+
+                let (arg_type, arg_value) = args[0];
+
+                module.set_return(
+                    arg_type,
+                    Instruction::new(
+                        Op::ReturnValue,
+                        None, None,
+                        vec![
+                            Operand::IdRef(arg_value),
+                        ],
+                    )
+                )?;
+
+                Ok((arg_type, arg_value))
+            },
+
             Node::Construct(output_type) => {
                 let type_id = module.register_type(output_type);
                 let res_id = module.get_id();
@@ -254,7 +334,7 @@ impl Node {
                                     args.into_iter()
                                         .map(|(ty, val)| {
                                             if ty != data_type {
-                                                bail!(ErrorKind::BadArguments(box [ ty ]));
+                                                bail!(ErrorKind::BadArguments(Box::new([ ty ])));
                                             }
 
                                             Ok(Operand::IdRef(val))
@@ -263,7 +343,7 @@ impl Node {
 
                                 res?
                             },
-                            _ => bail!(ErrorKind::BadArguments(box [ output_type ])),
+                            _ => bail!(ErrorKind::BadArguments(Box::new([ output_type ]))),
                         }
                     )
                 );
@@ -300,7 +380,7 @@ impl Node {
 
                         Ok((data_ty, res_id))
                     },
-                    _ => bail!(ErrorKind::BadArguments(box [ arg_type ])),
+                    _ => bail!(ErrorKind::BadArguments(Box::new([ arg_type ]))),
                 }
             },
 

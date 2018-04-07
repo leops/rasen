@@ -1,8 +1,12 @@
 //! Compiler plugin providing various syntax extensions to simplify writing shaders with the Rasen DSL
 //!
-//! # Shader wrapper
-//! The `shader` attribute on a function will generate a wrapper function with the `_shader` suffix,
-//! returning the corresponding Shader object.
+//! # Module wrapper
+//! The `rasen(module)` attribute on a function will generate a wrapper function with the `_module` suffix,
+//! returning the corresponding Module object.
+//! 
+//! The `rasen(function)` attribute flags a function to be exported when called from a module builder function.
+//! Otherwise, due to the way the compiler works on data-flow graph, any function called in Rust will be inlined
+//! in the resulting code.
 //!
 //! ```
 //! #![feature(plugin, custom_attribute)]
@@ -10,16 +14,22 @@
 //!
 //! extern crate rasen;
 //! extern crate rasen_dsl;
-//! use rasen_dsl::prelude::*;
+//! use rasen_dsl::prelude::*; // Some features require the prelude to be imported in scope
 //!
-//! #[shader] // This will create the function basic_frag_shader() -> Shader
+//! #[rasen(function)] // This function will be exported to the SPIR-V code
+//! fn clamp_light(value: Value<Float>) -> Value<Float> {
+//!     clamp(value, 0.1f32, 1.0f32)
+//! }
+//! 
+//! #[rasen(module)] // This will create the function basic_frag_module() -> Module
 //! fn basic_frag(a_normal: Value<Vec3>) -> Value<Vec4> {
 //!     let normal = normalize(a_normal);
 //!     let light = Vec3(0.3, -0.5, 0.2);
 //!     let color = Vec4(0.25, 0.625, 1.0, 1.0);
 //!
-//!     clamp(dot(normal, light), 0.1f32, 1.0f32) * color
+//!     clamp_light(dot(normal, light)) * color
 //! }
+//! # basic_frag_module()
 //! ```
 //!
 //! # Index macro
@@ -31,11 +41,13 @@
 //! # extern crate rasen;
 //! # extern crate rasen_dsl;
 //! # use rasen_dsl::prelude::*;
+//! # #[rasen(module)]
 //! fn swizzle(a_pos: Value<Vec3>, a_color: Value<Vec4>) -> (Value<Vec2>, Value<Vec3>) {
 //!     let pos = idx!(a_pos, xy);
 //!     let col = idx!(a_color, rgb);
 //!     (pos, col)
 //! }
+//! # swizzle_module()
 //! ```
 //!
 //! # Vector macros
@@ -48,14 +60,17 @@
 //! # extern crate rasen;
 //! # extern crate rasen_dsl;
 //! # use rasen_dsl::prelude::*;
+//! # #[rasen(module)]
 //! fn constructors(a_xy: Value<Vec2>, a_zw: Value<Vec2>) -> (Value<Vec3>, Value<Vec4>) {
 //!     let pos = vec3!(a_xy, 1.0f32);
 //!     let norm = vec4!(a_xy, a_zw);
 //!     (pos, norm)
 //! }
+//! # constructors_module()
 //! ```
 
-#![feature(plugin_registrar, rustc_private, custom_attribute, box_syntax, i128_type)]
+#![recursion_limit="256"]
+#![feature(plugin_registrar, rustc_private, custom_attribute, box_syntax)]
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 
@@ -70,20 +85,22 @@ use rustc_plugin::registry::Registry;
 use syntax::parse::token::{Token, Lit};
 use syntax::ext::quote::rt::ExtParseUtils;
 use syntax::tokenstream::{TokenStream, TokenTree};
-use syntax::ast::{self, Item, ItemKind, MetaItem, FnDecl, FunctionRetTy, TyKind, PatKind, ExprKind};
+use syntax::ast::{
+    self, Item, ItemKind,
+    MetaItem, MetaItemKind, NestedMetaItemKind,
+    FnDecl, FunctionRetTy, TyKind, PatKind, ExprKind,
+};
 use syntax::ext::base::{Annotatable, ExtCtxt, SyntaxExtension, MacResult, MacEager, TTMacroExpander};
 
 use quote::Ident;
 
-fn insert_shader_wrapper(ecx: &mut ExtCtxt, _span: Span, _meta_item: &MetaItem, item: Annotatable) -> Vec<Annotatable> {
-    let mut result = vec![ item.clone() ];
-
-    if let Annotatable::Item(item) = item {
-        let Item { ident, ref node, .. } = *item;
+fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Vec<Annotatable> {
+    let tokens = if let Annotatable::Item(ref item) = item {
+        let Item { ident, ref node, .. } = **item;
         let fn_name = Ident::from(format!("{}", ident));
-        let aux_name = Ident::from(format!("{}_shader", ident));
+        let aux_name = Ident::from(format!("{}_module", ident));
 
-        if let ItemKind::Fn(ref decl, _, _, _, _, ref _block) = *node {
+        if let ItemKind::Fn(ref decl, _, _, _, _, _) = *node {
             let FnDecl { ref inputs, ref output, .. } = **decl;
 
             let args: Vec<_> = {
@@ -131,38 +148,213 @@ fn insert_shader_wrapper(ecx: &mut ExtCtxt, _span: Span, _meta_item: &MetaItem, 
             let uni_id: Vec<_> = (0..uniforms.len()).map(|i| i as u32).collect();
             let out_id: Vec<_> = (0..outputs.len()).map(|i| i as u32).collect();
 
-            let tokens = quote! {
+            Some(quote! {
                 #[allow(dead_code)]
-                pub fn #aux_name() -> Shader {
-                    let shader = Shader::new();
-                    #( let #attributes = shader.input(#attr_id); )*
-                    #( let #uniforms = shader.uniform(#uni_id); )*
+                pub fn #aux_name() -> Module {
+                    let module = Module::new();
+                    #( let #attributes = module.input(#attr_id); )*
+                    #( let #uniforms = module.uniform(#uni_id); )*
                     let #output = #fn_name( #( #args ),* );
-                    #( shader.output(#out_id, #outputs); )*
-                    shader
+                    #( module.output(#out_id, #outputs); )*
+                    module
                 }
-            };
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
-            result.push(Annotatable::Item(ecx.parse_item(tokens.to_string())));
+    if let Some(tokens) = tokens {
+        vec![
+            item,
+            Annotatable::Item(ecx.parse_item(tokens.to_string())),
+        ]
+    } else {
+        ecx.span_fatal(span, "Unsupported item for Rasen module attribute")
+    }
+}
+
+/*
+ * fn name(args: T, ...) -> R {
+ *     let func = |args: T, ...| -> R {
+ *         // Code
+ *     };
+ * 
+ *     if let Some(module) = args.get_module().or_else(...) {
+ *         let func = module.function(func);
+ *         func(args, ...)
+ *     } else {
+ *         func(args, ...)
+ *     }
+ * }
+ */
+fn insert_function_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Vec<Annotatable> {
+    if let Annotatable::Item(item) = item {
+        let Item { ident, ref attrs, ref node, span, .. } = *item;
+        if let ItemKind::Fn(ref decl, unsafety, constness, abi, ref generics, ref block) = *node {
+            let FnDecl { ref inputs, ref output, .. } = **decl;
+            return vec![
+                Annotatable::Item(ecx.item(
+                    span, ident,
+                    attrs.clone(),
+                    ItemKind::Fn(
+                        ecx.fn_decl(
+                            inputs.clone(),
+                            output.clone(),
+                        ),
+                        unsafety, constness, abi,
+                        generics.clone(),
+                        ecx.block(block.span, vec![
+                            ecx.stmt_let(
+                                block.span, false,
+                                ecx.ident_of("func"),
+                                ecx.lambda_fn_decl(
+                                    block.span,
+                                    ecx.fn_decl(
+                                        inputs.clone(),
+                                        output.clone(),
+                                    ),
+                                    ecx.expr_block(block.clone()),
+                                    block.span,
+                                ),
+                            ),
+                            ecx.stmt_expr(ecx.expr(block.span, ExprKind::IfLet(
+                                vec![
+                                    ecx.pat_some(
+                                        block.span,
+                                        ecx.pat_ident(block.span, ecx.ident_of("module")),
+                                    )
+                                ],
+                                inputs.iter()
+                                    .fold(None, |current, arg| match arg.pat.node {
+                                        PatKind::Ident(_, ident, _) => Some({
+                                            let id = ecx.expr_ident(ident.span, ident.node);
+                                            let module = ecx.expr_method_call(
+                                                ident.span, id,
+                                                ecx.ident_of("get_module"),
+                                                Vec::new(),
+                                            );
+
+                                            if let Some(chain) = current {
+                                                ecx.expr_method_call(
+                                                    ident.span, chain,
+                                                    ecx.ident_of("or_else"),
+                                                    vec![
+                                                        ecx.lambda0(ident.span, module),
+                                                    ],
+                                                )
+                                            } else {
+                                                module
+                                            }
+                                        }),
+                                        _ => ecx.span_fatal(arg.pat.span, "Unsupported destructuring"),
+                                    })
+                                    .unwrap(),
+                                ecx.block(block.span, vec![
+                                    ecx.stmt_let(
+                                        block.span, false,
+                                        ecx.ident_of("func"),
+                                        ecx.expr_method_call(
+                                            block.span,
+                                            ecx.expr_ident(block.span, ecx.ident_of("module")),
+                                            ecx.ident_of("function"),
+                                            vec![
+                                                ecx.expr_ident(block.span, ecx.ident_of("func")),
+                                            ],
+                                        ),
+                                    ),
+                                    ecx.stmt_expr(ecx.expr_call_ident(
+                                        block.span,
+                                        ecx.ident_of("func"),
+                                        inputs.iter()
+                                            .map(|arg| match arg.pat.node {
+                                                PatKind::Ident(_, ident, _) => ecx.expr_ident(ident.span, ident.node),
+                                                _ => ecx.span_fatal(arg.pat.span, "Unsupported destructuring"),
+                                            })
+                                            .collect(),
+                                    )),
+                                ]),
+                                Some(
+                                    ecx.expr_call_ident(
+                                        block.span,
+                                        ecx.ident_of("func"),
+                                        inputs.iter()
+                                            .map(|arg| match arg.pat.node {
+                                                PatKind::Ident(_, ident, _) => ecx.expr_ident(ident.span, ident.node),
+                                                _ => ecx.span_fatal(arg.pat.span, "Unsupported destructuring"),
+                                            })
+                                            .collect(),
+                                    ),
+                                ),
+                            ))),
+                        ]),
+                    ),
+                )),
+            ];
         }
     }
 
-    result
+    ecx.span_fatal(span, "Unsupported item for Rasen function attribute")
+}
+
+fn rasen_attribute(ecx: &mut ExtCtxt, span: Span, meta_item: &MetaItem, item: Annotatable) -> Vec<Annotatable> {
+    let res = match meta_item.node {
+        MetaItemKind::List(ref list) if list.len() == 1 => {
+            let first = &list[0];
+            match first.node {
+                NestedMetaItemKind::MetaItem(ref meta) => {
+                    if meta.name == Symbol::from("module") {
+                        Ok(insert_module_wrapper(ecx, span, item))
+                    } else if meta.name == Symbol::from("function") {
+                        Ok(insert_function_wrapper(ecx, span, item))
+                    } else {
+                        Err(meta.span)
+                    }
+                },
+                _ => Err(first.span)
+            }
+        },
+        _ => Err(meta_item.span),
+    };
+
+    match res {
+        Ok(res) => res,
+        Err(span) => ecx.span_fatal(span, "Unsupported rasen attribute"),
+    }
 }
 
 fn idx_macro<'cx>(ecx: &'cx mut ExtCtxt, span: Span, tt: &[TokenTree]) -> Box<MacResult + 'cx> {
     match (&tt[0], &tt[2]) {
-        (&TokenTree::Token(_, Token::Ident(obj)), &TokenTree::Token(_, Token::Ident(index))) => {
-            let index = format!("{}", index);
+        (&TokenTree::Token(_, Token::Ident(obj, _)), &TokenTree::Token(_, Token::Ident(index, _))) => {
+            let index = index.to_string();
+            if index.is_empty() {
+                ecx.span_fatal(span, &format!("Empty composite field"));
+            }
 
-            let fields: Vec<_> = {
+            let mut fields: Vec<_> = {
                 index.chars()
-                    .map(|field| match field {
-                        'x' | 'r' | 's' => 0,
-                        'y' | 'g' | 't' => 1,
-                        'z' | 'b' | 'p' => 2,
-                        'w' | 'a' | 'q' => 3,
-                        _ => panic!("invalid composite field {}", field),
+                    .map(|field| {
+                        let index = match field {
+                            'x' | 'r' | 's' => 0,
+                            'y' | 'g' | 't' => 1,
+                            'z' | 'b' | 'p' => 2,
+                            'w' | 'a' | 'q' => 3,
+                            _ => ecx.span_fatal(span, &format!("invalid composite field {}", field)),
+                        };
+
+                        ecx.expr_call_ident(
+                            span,
+                            ast::Ident::from_str("index"),
+                            vec![
+                                ecx.expr_addr_of(
+                                    span,
+                                    ecx.expr_ident(span, obj),
+                                ),
+                                ecx.expr_u32(span, index),
+                            ],
+                        )
                     })
                     .collect()
             };
@@ -173,23 +365,10 @@ fn idx_macro<'cx>(ecx: &'cx mut ExtCtxt, span: Span, tt: &[TokenTree]) -> Box<Ma
                     ecx.expr_call_ident(
                         span,
                         ast::Ident::from_str(&format!("vec{}", count)),
-                        vec![
-                            ecx.expr_ident(span, obj),
-                            ecx.expr_u32(span, fields[0]),
-                        ],
+                        fields,
                     )
                 } else {
-                    ecx.expr_call_ident(
-                        span,
-                        ast::Ident::from_str("index"),
-                        vec![
-                            ecx.expr_addr_of(
-                                span,
-                                ecx.expr_ident(span, obj),
-                            ),
-                            ecx.expr_u32(span, fields[0]),
-                        ],
-                    )
+                    fields.remove(0)
                 }
             )
         },
@@ -239,7 +418,7 @@ impl<'a> TTMacroExpander for CompositeMacro<'a> {
             ts.trees()
                 .filter_map(|tt| match tt {
                     TokenTree::Token(_, token) => match token {
-                        Token::Ident(id) => Some(
+                        Token::Ident(id, _) => Some(
                             ecx.expr_ident(span, id)
                         ),
                         Token::Literal(lit, _) => match lit {
@@ -389,12 +568,13 @@ pub fn plugin_registrar(reg: &mut Registry) {
                 allow_internal_unsafe: false,
                 allow_internal_unstable: false,
                 def_info: None,
+                unstable_feature: None,
             },
         );
     }
 
     reg.register_syntax_extension(
-        Symbol::intern("shader"),
-        SyntaxExtension::MultiModifier(box insert_shader_wrapper)
+        Symbol::intern("rasen"),
+        SyntaxExtension::MultiModifier(box rasen_attribute)
     );
 }

@@ -1,7 +1,13 @@
 # Set up the Rust toolchain.
 language: rust
-rust:
-    - nightly
+matrix:
+    include:
+        - rust: stable
+          env: DSL_FEATURES=''
+        - rust: beta
+          env: DSL_FEATURES=''
+        - rust: nightly
+          env: DSL_FEATURES=functions
 
 # Since this build doesn't require sudo, we can turn it off and improve build
 # performance.
@@ -11,11 +17,9 @@ sudo: false
 # needed.
 cache: cargo
 
-# Install the necessary crates for building and testing the engine.
-before_script:
-    - export PATH=$PATH:/home/travis/.cargo/bin
-    - (cargo install cargo-local-pkgs || true)
-    - (cargo install rustfmt || true)
-
 # Run tests and benchmarks.
-script: cargo test -p rasen -p rasen-dsl && cargo bench -p rasen -p rasen-dsl
+script:
+    - cargo test -p rasen
+    - cargo test -p rasen-dsl --features "$DSL_FEATURES"
+    - cargo bench -p rasen
+    - cargo bench -p rasen-dsl --features "$DSL_FEATURES"

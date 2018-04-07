@@ -6,16 +6,31 @@ description = "Wrapper for the Rasen compiler to write SPIR-V shaders in Rust"
 documentation = "https://docs.rs/rasen-dsl/"
 homepage = "https://github.com/leops/rasen#readme"
 repository = "https://github.com/leops/rasen"
+readme = "README.md"
+license = "MIT"
 build = "build.rs"
+keywords = [
+    "SPIRV",
+    "Vulkan",
+    "GLSL",
+]
+categories = [
+    "development-tools",
+    "rendering",
+]
 
 [features]
 default = []
+functions = []
 
 [dependencies]
-rasen = { version = "0.10.0", path = "../rasen" }
+rasen = { version = "0.11.0", path = "../rasen" }
 clippy = { version = "0.0.134", optional = true }
 
 [build-dependencies]
 syn = "0.11.11"
 quote = "0.3.15"
 clippy = { version = "0.0.134", optional = true }
+
+[dev-dependencies]
+diff = "0.1.11"

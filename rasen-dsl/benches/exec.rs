@@ -56,3 +56,10 @@ fn bench_run_basic_vert(b: &mut Bencher) {
         )
     });
 }
+
+#[bench]
+fn bench_run_functions(b: &mut Bencher) {
+    b.iter(|| {
+        functions(3.14f32.into());
+    });
+}
