@@ -1,4 +1,5 @@
 .idea
 *.iml
+tests/*.spv
 target
 Cargo.lock

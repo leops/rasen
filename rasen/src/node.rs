@@ -58,7 +58,7 @@ impl Node {
         }
 
         match *self {
-            Node::Output(location, attr_type) => {
+            Node::Output(location, attr_type, ref name) => {
                 if args.len() != 1 {
                     bail!(ErrorKind::WrongArgumentsCount(args.len(), 1));
                 }
@@ -110,6 +110,8 @@ impl Node {
                     )
                 );
 
+                name.decorate_variable(module, var_id);
+
                 module.push_instruction(
                     Instruction::new(
                         Op::Store,
@@ -125,7 +127,7 @@ impl Node {
                 Ok((attr_type, var_id))
             },
 
-            Node::Input(location, attr_type) => {
+            Node::Input(location, attr_type, ref name) => {
                 let type_id = module.register_type(attr_type);
 
                 let ptr_type = module.get_id();
@@ -169,6 +171,8 @@ impl Node {
                     )
                 );
 
+                name.decorate_variable(module, var_id);
+
                 let res_id = module.get_id();
 
                 module.push_instruction(
@@ -186,7 +190,7 @@ impl Node {
                 Ok((attr_type, res_id))
             },
 
-            Node::Uniform(location, attr_type) => {
+            Node::Uniform(location, attr_type, ref name) => {
                 let type_id = module.register_type(attr_type);
 
                 let ptr_type = module.get_id();
@@ -202,8 +206,36 @@ impl Node {
                     )
                 );
 
-                let var_id = module.register_uniform(location, attr_type);
+                let (struct_id, var_id) = module.register_uniform(location, attr_type);
                 let index_id = module.register_constant(&TypedValue::Int(location as i32))?;
+
+                name.decorate_member(module, struct_id, location);
+
+                if let TypeName::Mat(_, vec) = attr_type {
+                    module.push_annotation(
+                        Instruction::new(
+                            Op::MemberDecorate,
+                            None, None,
+                            vec![
+                                Operand::IdRef(struct_id),
+                                Operand::LiteralInt32(location),
+                                Operand::Decoration(Decoration::MatrixStride),
+                                Operand::LiteralInt32(vec.size()),
+                            ]
+                        )
+                    );
+                    module.push_annotation(
+                        Instruction::new(
+                            Op::MemberDecorate,
+                            None, None,
+                            vec![
+                                Operand::IdRef(struct_id),
+                                Operand::LiteralInt32(location),
+                                Operand::Decoration(Decoration::ColMajor),
+                            ]
+                        )
+                    );
+                }
 
                 let chain_id = module.get_id();
                 module.push_instruction(
@@ -330,7 +362,7 @@ impl Node {
                                     bail!(ErrorKind::WrongArgumentsCount(args.len(), size as usize));
                                 }
 
-                                let res: Result<Vec<_>> =
+                                let res: Result<Vec<_>> = {
                                     args.into_iter()
                                         .map(|(ty, val)| {
                                             if ty != data_type {
@@ -339,7 +371,27 @@ impl Node {
 
                                             Ok(Operand::IdRef(val))
                                         })
-                                        .collect();
+                                        .collect()
+                                };
+
+                                res?
+                            },
+                            TypeName::Mat(size, vec_type) => {
+                                if args.len() != size as usize {
+                                    bail!(ErrorKind::WrongArgumentsCount(args.len(), size as usize));
+                                }
+
+                                let res: Result<Vec<_>> = {
+                                    args.into_iter()
+                                        .map(|(ty, val)| {
+                                            if ty != vec_type {
+                                                bail!(ErrorKind::BadArguments(Box::new([ ty ])));
+                                            }
+
+                                            Ok(Operand::IdRef(val))
+                                        })
+                                        .collect()
+                                };
 
                                 res?
                             },
@@ -422,5 +474,82 @@ impl Node {
 impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.to_string())
+    }
+}
+
+#[derive(Debug)]
+pub enum VariableName {
+    BuiltIn(BuiltIn),
+    Named(String),
+    None,
+}
+
+impl VariableName {
+    pub(crate) fn decorate_variable<B>(&self, module: &mut B, var_id: Word) where B: Builder {
+        match *self {
+            VariableName::BuiltIn(built_in) => {
+                module.push_annotation(
+                    Instruction::new(
+                        Op::Decorate,
+                        None, None,
+                        vec![
+                            Operand::IdRef(var_id),
+                            Operand::Decoration(Decoration::BuiltIn),
+                            Operand::BuiltIn(built_in),
+                        ]
+                    )
+                );
+            },
+
+            VariableName::Named(ref name) => {
+                module.push_debug(
+                    Instruction::new(
+                        Op::Name,
+                        None, None,
+                        vec![
+                            Operand::IdRef(var_id),
+                            Operand::LiteralString(name.clone()),
+                        ]
+                    )
+                );
+            },
+
+            VariableName::None => {},
+        }
+    }
+
+    fn decorate_member<B>(&self, module: &mut B, var_id: Word, offset: Word) where B: Builder {
+        match *self {
+            VariableName::BuiltIn(built_in) => {
+                module.push_annotation(
+                    Instruction::new(
+                        Op::MemberDecorate,
+                        None, None,
+                        vec![
+                            Operand::IdRef(var_id),
+                            Operand::LiteralInt32(offset),
+                            Operand::Decoration(Decoration::BuiltIn),
+                            Operand::BuiltIn(built_in),
+                        ]
+                    )
+                );
+            },
+
+            VariableName::Named(ref name) => {
+                module.push_debug(
+                    Instruction::new(
+                        Op::MemberName,
+                        None, None,
+                        vec![
+                            Operand::IdRef(var_id),
+                            Operand::LiteralInt32(offset),
+                            Operand::LiteralString(name.clone()),
+                        ]
+                    )
+                );
+            },
+
+            VariableName::None => {},
+        }
     }
 }

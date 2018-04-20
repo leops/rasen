@@ -426,17 +426,17 @@ fn nodes(out_dir: &str) {
             /// Create an input with a location and a type
             ///
             /// Incoming values from other nodes are ignored
-            Input(u32, &'static TypeName),
+            Input(u32, &'static TypeName, VariableName),
 
             /// Create a uniform with a location and a type
             ///
             /// Incoming values from other nodes are ignored
-            Uniform(u32, &'static TypeName),
+            Uniform(u32, &'static TypeName, VariableName),
 
             /// Create an output with a location and a type
             ///
             /// Doesn't need to be an output of the graph, but all the outputs should use this type
-            Output(u32, &'static TypeName),
+            Output(u32, &'static TypeName, VariableName),
 
             /// Declare a new constant
             ///

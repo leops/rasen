@@ -127,7 +127,7 @@ impl<'a> Builder for FunctionBuilder<'a> {
         self.module.register_constant(constant)
     }
 
-    fn register_uniform(&mut self, location: u32, type_id: &'static TypeName) -> Word {
+    fn register_uniform(&mut self, location: u32, type_id: &'static TypeName) -> (Word, Word) {
         self.module.register_uniform(location, type_id)
     }
 
@@ -149,6 +149,10 @@ impl<'a> Builder for FunctionBuilder<'a> {
 
     fn push_annotation(&mut self, inst: Instruction) {
         self.module.push_annotation(inst)
+    }
+
+    fn push_debug(&mut self, inst: Instruction) {
+        self.module.push_debug(inst)
     }
 
     fn push_parameter(&mut self, location: u32, ty: &'static TypeName, inst: Instruction) -> Result<()> {

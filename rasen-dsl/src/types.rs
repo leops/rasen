@@ -5,7 +5,7 @@ use rasen::prelude::{Node, TypeName, TypedValue, NodeIndex};
 use std::ops::Index;
 use std::marker::PhantomData;
 use value::{GraphRef, Value, FuncKind, IntoValue};
-use module::{Module, Input, Uniform, Output, Function, Parameter};
+use module::{Module, Input, Uniform, Output, Function, Parameter, NameWrapper};
 
 pub mod traits {
     use std::iter::Sum;
@@ -73,10 +73,11 @@ impl IntoValue for Sampler {
 
 impl Uniform<Sampler> for Module {
     #[inline]
-    fn uniform(&self, location: u32) -> Value<Sampler> {
+    fn uniform<N>(&self, location: u32, name: N) -> Value<Sampler> where N: Into<NameWrapper> {
         let index = {
             let mut module = self.borrow_mut();
-            module.main.add_node(Node::Uniform(location, TypeName::SAMPLER2D))
+            let NameWrapper(name) = name.into();
+            module.main.add_node(Node::Uniform(location, TypeName::SAMPLER2D, name))
         };
 
         Value::Abstract {

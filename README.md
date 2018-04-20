@@ -27,7 +27,7 @@ fn main() {
     let mut graph = Graph::new();
 
     // A vec3 input at location 0
-    let normal = graph.add_node(Node::Input(0, TypeName::Vec(3)));
+    let normal = graph.add_node(Node::Input(0, TypeName::VEC3, VariableName::Named(String::from("a_normal"))));
 
     // Some ambient light constants
     let min_light = graph.add_node(Node::Constant(TypedValue::Float(0.1)));
@@ -44,7 +44,7 @@ fn main() {
     let multiply = graph.add_node(Node::Multiply);
 
     // And a vec4 output at location 0
-    let color = graph.add_node(Node::Output(0, TypeName::Vec(4)));
+    let color = graph.add_node(Node::Output(0, TypeName::VEC4, VariableName::Named(String::from("o_color"))));
 
     // Normalize the normal
     graph.add_edge(normal, normalize, 0);
@@ -82,12 +82,12 @@ use rasen_dsl::prelude::*;
 fn main() {
     let shader = Module::new();
 
-    let normal: Value<Vec3> = normalize(shader.input(0));
+    let normal: Value<Vec3> = normalize(shader.input(0, "a_normal"));
     let light = vec3(0.3, -0.5, 0.2);
     let color = vec4(0.25, 0.625, 1.0, 1.0);
 
     let res = clamp(dot(normal, light), 0.1f32, 1.0f32) * color;
-    shader.output(0, res);
+    shader.output(0, "o_color", res);
 
     let bytecode = shader.build(ShaderType::Fragment).unwrap();
     // bytecode is now a Vec<u8> you can pass to Vulkan to create the shader module
@@ -108,7 +108,7 @@ shaders in Rust event easier:
 ```rust
 use rasen_dsl::prelude::*;
 
-#[shader]
+#[rasen(module)]
 pub fn basic_vert(a_pos: Value<Vec3>, projection: Value<Mat4>, view: Value<Mat4>, model: Value<Mat4>) -> Value<Vec4> {
    let mvp = projection * view * model;
    mvp * vec4!(a_pos, 1.0f32)

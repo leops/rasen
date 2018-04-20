@@ -46,7 +46,7 @@ impl Graph {
         Box::new(
             self.graph.externals(Outgoing)
                 .filter(move |index| match self.graph.node_weight(*index) {
-                    Some(&Node::Output(_, _)) |
+                    Some(&Node::Output(_, _, _)) |
                     Some(&Node::Return) => true,
                     _ => false,
                 })

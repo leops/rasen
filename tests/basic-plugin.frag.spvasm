@@ -7,11 +7,10 @@ OpCapability Shader
 OpMemoryModel Logical GLSL450
 OpEntryPoint Fragment %4 "main" %8 %32 %38
 OpExecutionMode %4 OriginUpperLeft
-OpName %8 "f_normal"
+OpName %8 "a_normal"
 OpName %25 "Uniforms"
-OpMemberName %23 0 "u_material"
-OpName %32 "f_uv"
-OpName %38 "o_col"
+OpMemberName %23 0 "material"
+OpName %32 "a_uv"
 OpDecorate %8 Location 0
 OpDecorate %23 Block
 OpDecorate %32 Location 1

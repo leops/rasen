@@ -7,12 +7,12 @@
 //! # fn main() {
 //! let shader = Module::new();
 //!
-//! let normal: Value<Vec3> = normalize(shader.input(0));
+//! let normal: Value<Vec3> = normalize(shader.input(0, "a_normal"));
 //! let light = Vec3(0.3, -0.5, 0.2);
 //! let color = Vec4(0.25, 0.625, 1.0, 1.0);
 //!
 //! let res = clamp(dot(normal, light), 0.1f32, 1.0f32) * color;
-//! shader.output(0, res);
+//! shader.output(0, "o_color", res);
 //!
 //! # #[allow(unused_variables)]
 //! let bytecode = shader.build(ShaderType::Fragment).unwrap();

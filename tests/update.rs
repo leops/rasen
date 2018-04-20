@@ -1,73 +1,145 @@
-extern crate diff;
+mod _update_utils {
+    use std::{env, str, fmt};
+    use std::path::PathBuf;
+    use std::fs::OpenOptions;
+    use std::io::prelude::*;
+    use std::io::{SeekFrom, ErrorKind};
+    use std::process::Command;
+    use std::ffi::OsStr;
+    use std::convert::TryFrom;
+    use rspirv::binary::{Assemble, Disassemble};
+    use rspirv::mr::{Module as SpirvModule, load_words};
+    use rasen::errors::{self, Error};
+    use rasen::prelude::{ShaderType, ModuleBuilder};
 
-use std::env;
-use std::path::PathBuf;
-use std::fs::OpenOptions;
-use std::io::prelude::*;
-use std::io::{SeekFrom, ErrorKind};
-use std::process::Command;
-use std::ffi::OsStr;
-use std::fmt::Write as FmtWrite;
-use diff::Result as Res;
-
-fn try_run_command(name: &str, args: &[&OsStr]) -> Result<bool, String> {
-    let res = {
-        Command::new(name)
-            .args(args)
-            .status()
-    };
-
-    match res {
-        Ok(status) if status.success() => Ok(true),
-        Ok(status) => Err(format!("Command {} failed with error {:?}", name, status)),
-
-        Err(error) => match error.kind() {
-            ErrorKind::NotFound => {
-                println!("Command {} not in path, skipping", name);
-                Ok(false)
-            },
-            _ => Err(format!("{:?}", error)),
-        },
+    pub enum ModuleWrapper { 
+        Module(SpirvModule),
+        String(String),
+        Static(&'static str),
     }
-}
 
-fn file_compare_and_swap(path: &PathBuf, current: &str, new: &str) {
-    let mut file = {
-        OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&path)
-            .expect(&format!("Could not open {}", path.display()))
-    };
+    impl Clone for ModuleWrapper {
+        fn clone(&self) -> ModuleWrapper {
+            match *self {
+                ModuleWrapper::Module(ref module) => ModuleWrapper::Module(
+                    load_words(module.assemble()).unwrap()
+                ),
+                ModuleWrapper::String(ref string) => ModuleWrapper::String(string.clone()),
+                ModuleWrapper::Static(string) => ModuleWrapper::Static(string),
+            }
+        }
+    }
 
-    let check_content = {
-        let mut res = String::new();
-        file.read_to_string(&mut res).unwrap();
-        res
-    };
+    impl<'a> From<&'a ModuleWrapper> for ModuleWrapper {
+        fn from(other: &'a ModuleWrapper) -> ModuleWrapper {
+            other.clone()
+        }
+    }
 
-    assert!(check_content == current, "Test data have changed since compilation");
+    impl From<String> for ModuleWrapper {
+        fn from(string: String) -> ModuleWrapper {
+            ModuleWrapper::String(string)
+        }
+    }
 
-    file.set_len(0).expect("truncate");
-    file.seek(SeekFrom::Start(0)).expect("seek");
-    write!(file, "{}", new).expect("write");
-}
+    impl ToString for ModuleWrapper {
+        fn to_string(&self) -> String {
+            match *self {
+                ModuleWrapper::Module(ref module) => module.disassemble(),
+                ModuleWrapper::String(ref string) => string.clone(),
+                ModuleWrapper::Static(string) => string.into(),
+            }
+        }
+    }
 
-macro_rules! check_or_update {
-    ($actual:ident, $reference:expr) => {{
-        static REF: &'static str = include_str!($reference);
+    impl fmt::Debug for ModuleWrapper {
+        fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "{}", self.to_string())
+        }
+    }
 
+    impl PartialEq for ModuleWrapper {
+        fn eq(&self, other: &Self) -> bool {
+            let this: String = self.to_string();
+            let other: String = other.to_string();
+            this == other
+        }
+    }
+
+    pub fn build_module<'a, I>(graph: &'a I, mod_type: ShaderType) -> errors::Result<ModuleWrapper> where ModuleBuilder: TryFrom<(&'a I, ShaderType), Error = Error> {
+        Ok(ModuleWrapper::Module(ModuleBuilder::try_from((graph, mod_type))?.build()?))
+    }
+
+    fn try_run_command(name: &str, args: &[&OsStr]) -> Result<bool, String> {
+        let res = {
+            Command::new(name)
+                .args(args)
+                .output()
+        };
+
+        match res {
+            Ok(ref output) if output.status.success() => Ok(true),
+            Ok(output) => Err(match str::from_utf8(&output.stderr) {
+                Ok(stderr) => format!("Command {} failed:\n{}", name, stderr),
+                Err(_) => format!("Command {} failed with output {:?}", name, output),
+            }),
+
+            Err(error) => match error.kind() {
+                ErrorKind::NotFound => {
+                    println!("Command {} not in path, skipping", name);
+                    Ok(false)
+                },
+                _ => Err(format!("{:?}", error)),
+            },
+        }
+    }
+
+    fn file_compare_and_swap(path: &PathBuf, current: &ModuleWrapper, new: &str) {
+        let mut file = {
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .expect(&format!("Could not open {}", path.display()))
+        };
+
+        let check_content = {
+            let mut res = String::new();
+            file.read_to_string(&mut res).unwrap();
+            res
+        };
+
+        let current: String = current.to_string();
+        if check_content != current && check_content != new {
+            assert_eq!(
+                check_content, current,
+                "Test data have changed since compilation",
+            );
+            assert_eq!(
+                check_content, new,
+                "Test data has already been modified with another result",
+            );
+        }
+
+        file.set_len(0).expect("truncate");
+        file.seek(SeekFrom::Start(0)).expect("seek");
+        write!(file, "{}", new).expect("write");
+    }
+
+    pub fn check_or_update_impl<T>(ref_name: &'static str, file: &'static str, ref_value: &'static ModuleWrapper, actual: T) where ModuleWrapper: From<T> {
+        let actual = ModuleWrapper::from(actual);
         if env::vars().any(|(name, val)| name == "RASEN_ALLOW_UPDATE" && val == "1") {
-            if $actual != REF {
-                println!("{} did not match test data, replacing ...", $reference);
+            if &actual != ref_value {
+                println!("{} did not match test data, replacing ...", ref_name);
 
                 let mut path = env::current_dir().expect("current_dir");
                 path.pop();
-                path.push(file!());
+                path.push(file);
                 path.pop();
-                path.push($reference);
+                path.push(ref_name);
 
-                file_compare_and_swap(&path, REF, &$actual);
+                let assemble: String = actual.to_string();
+                file_compare_and_swap(&path, ref_value, &assemble);
 
                 let mut out_path = path.clone();
                 out_path.set_file_name(
@@ -82,44 +154,23 @@ macro_rules! check_or_update {
 
                 if try_run_command("spirv-as", &[out_arg, out_path_arg, path_arg]).unwrap() {
                     assert!(try_run_command("spirv-val", &[out_path_arg]).unwrap());
-                    println!("Validated {}", $reference);
+                    println!("Validated {}", ref_name);
                 }
             }
         } else {
-            if $actual != REF {
-                let max_len = {
-                    REF.split("\n")
-                        .map(|line| line.len())
-                        .max()
-                        .unwrap()
-                };
-
-                let mut res = String::new();
-                for diff in diff::lines(REF, &$actual) {
-                    match diff {
-                        Res::Both(a, b) => {
-                            writeln!(
-                                res, "{}{}{}",
-                                a, " ".repeat(max_len - a.len()), b,
-                            ).unwrap();
-                        },
-                        Res::Right(b) => {
-                            writeln!(
-                                res, "{}{}",
-                                " ".repeat(max_len),
-                                b,
-                            ).unwrap();
-                        },
-                        Res::Left(a) => {
-                            writeln!(
-                                res, "{}", a,
-                            ).unwrap();
-                        },
-                    }
-                }
-
-                panic!("actual != ref\n{}", res)
-            }
+            assert_eq!(&actual, ref_value);
         }
+    }
+}
+
+pub use self::_update_utils::build_module;
+
+macro_rules! check_or_update {
+    ($actual:expr, $reference:expr) => {{
+        static REF: self::_update_utils::ModuleWrapper = {
+            self::_update_utils::ModuleWrapper::Static(include_str!($reference))
+        };
+
+        self::_update_utils::check_or_update_impl($reference, file!(), &REF, $actual)
     }};
 }

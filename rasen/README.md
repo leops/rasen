@@ -18,7 +18,7 @@ fn main() {
     let mut graph = Graph::new();
 
     // A vec3 input at location 0
-    let normal = graph.add_node(Node::Input(0, TypeName::Vec(3)));
+    let normal = graph.add_node(Node::Input(0, TypeName::VEC3, VariableName::Named(String::from("a_normal"))));
 
     // Some ambient light constants
     let min_light = graph.add_node(Node::Constant(TypedValue::Float(0.1)));
@@ -35,7 +35,7 @@ fn main() {
     let multiply = graph.add_node(Node::Multiply);
 
     // And a vec4 output at location 0
-    let color = graph.add_node(Node::Output(0, TypeName::Vec(4)));
+    let color = graph.add_node(Node::Output(0, TypeName::VEC4, VariableName::Named(String::from("o_color"))));
 
     // Normalize the normal
     graph.add_edge(normal, normalize, 0);

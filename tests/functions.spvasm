@@ -5,7 +5,7 @@
 OpCapability Shader
 OpMemoryModel Logical GLSL450
 OpEntryPoint Vertex %4 "main" %11 %15
-OpExecutionMode %4 OriginUpperLeft
+OpName %11 "a_input"
 OpDecorate %11 Location 0
 OpDecorate %15 Location 0
 %6 = OpTypeFloat 32

@@ -1,5 +1,8 @@
 extern crate rasen;
 extern crate rasen_dsl;
+#[macro_use]
+extern crate pretty_assertions;
+extern crate rspirv;
 
 use rasen_dsl::prelude::*;
 

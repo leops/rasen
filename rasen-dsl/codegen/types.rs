@@ -296,6 +296,52 @@ fn type_matrix(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
 
     let ty = Ident::from(ty);
     let mat_size = (size * size) as usize;
+    
+    let lower = Ident::from(name.as_ref().to_lowercase());
+    let upper = Ident::from(name.as_ref().to_uppercase());
+    let indices: Vec<u32> = (0..size).collect();
+    let generics: Vec<_> = (0..size).map(|i| Ident::from(format!("T{}", i))).collect();
+    let args1: Vec<_> = generics.iter().map(|gen| Ident::from(gen.as_ref().to_lowercase())).collect();
+    let args2 = args1.clone();
+    let args3: Vec<_> = {
+        args1.iter()
+            .flat_map(|ident| -> Vec<_> {
+                (0..size)
+                    .map(|index| {
+                        let index = Ident::from(format!("{}", index));
+                        quote! { #ident.#index }
+                    })
+                    .collect()
+            })
+            .collect()
+    };
+    let arg_list: Vec<_> = {
+        generics.iter()
+            .zip(args1.iter())
+            .map(|(gen, name)| quote! { #name: #gen })
+            .collect()
+    };
+    let constraints: Vec<_> = {
+        generics.iter()
+            .map(|gen| {
+                let comp = vector.name.clone();
+                quote! { #gen: IntoValue<Output=#comp> }
+            })
+            .collect()
+    };
+
+    let func_impl = match_values(
+        &args1,
+        &quote! {
+            Value::Concrete(#name([ #( #args3 ),* ]))
+        },
+        quote! {
+            let index = graph.add_node(Node::Construct(TypeName::#upper));
+            #( graph.add_edge(#args2, index, #indices); )*
+            index
+        },
+    );
+
     quote! {
         #[derive(Copy, Clone, Debug)]
         pub struct #name(pub [ #ty ; #mat_size ]);
@@ -331,6 +377,11 @@ fn type_matrix(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
                 graph.add_node(Node::Constant(TypedValue::#name(self.0)))
             }
         }
+
+        #[inline]
+        pub fn #lower< #( #generics ),* >( #( #arg_list ),* ) -> Value<#name> where #( #constraints ),* {
+            #func_impl
+        }
     }
 }
 
@@ -353,10 +404,11 @@ pub fn type_structs() -> Vec<Tokens> {
 
                 impl Input<#name> for Module {
                     #[inline]
-                    fn input(&self, location: u32) -> Value<#name> {
+                    fn input<N>(&self, location: u32, name: N) -> Value<#name> where N: Into<NameWrapper> {
                         let index = {
                             let mut module = self.borrow_mut();
-                            module.main.add_node(Node::Input(location, TypeName::#upper))
+                            let NameWrapper(name) = name.into();
+                            module.main.add_node(Node::Input(location, TypeName::#upper, name))
                         };
 
                         Value::Abstract {
@@ -370,10 +422,11 @@ pub fn type_structs() -> Vec<Tokens> {
 
                 impl Uniform<#name> for Module {
                     #[inline]
-                    fn uniform(&self, location: u32) -> Value<#name> {
+                    fn uniform<N>(&self, location: u32, name: N) -> Value<#name> where N: Into<NameWrapper> {
                         let index = {
                             let mut module = self.borrow_mut();
-                            module.main.add_node(Node::Uniform(location, TypeName::#upper))
+                            let NameWrapper(name) = name.into();
+                            module.main.add_node(Node::Uniform(location, TypeName::#upper, name))
                         };
 
                         Value::Abstract {
@@ -387,7 +440,7 @@ pub fn type_structs() -> Vec<Tokens> {
 
                 impl Output<#name> for Module {
                     #[inline]
-                    fn output(&self, location: u32, source: Value<#name>) {
+                    fn output<N>(&self, location: u32, name: N, source: Value<#name>) where N: Into<NameWrapper> {
                         let src = match source {
                             Value::Abstract { index, .. } => index,
                             source @ Value::Concrete(_) => {
@@ -398,7 +451,8 @@ pub fn type_structs() -> Vec<Tokens> {
                         };
 
                         let mut module = self.borrow_mut();
-                        let sink = module.main.add_node(Node::Output(location, TypeName::#upper));
+                        let NameWrapper(name) = name.into();
+                        let sink = module.main.add_node(Node::Output(location, TypeName::#upper, name));
                         module.main.add_edge(src, sink, 0);
                     }
                 }

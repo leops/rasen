@@ -10,6 +10,7 @@ pub use node::*;
 
 pub use petgraph::graph::NodeIndex;
 pub use spirv_headers::ExecutionModel as ShaderType;
+pub use spirv_headers::BuiltIn;
 
 use errors::{Result, Error};
 

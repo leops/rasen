@@ -7,6 +7,7 @@ use std::ops::FnOnce;
 
 use rasen::prelude::{
     Module as CoreModule, ShaderType,
+    VariableName, BuiltIn,
     build_program, build_program_assembly,
 };
 #[cfg(feature = "functions")]
@@ -49,19 +50,54 @@ impl Module {
     }
 }
 
+pub struct NameWrapper(pub(crate) VariableName);
+
+impl<'a> From<&'a str> for NameWrapper {
+    fn from(val: &'a str) -> NameWrapper {
+        NameWrapper(VariableName::Named(val.into()))
+    }
+}
+
+impl From<String> for NameWrapper {
+    fn from(val: String) -> NameWrapper {
+        NameWrapper(VariableName::Named(val))
+    }
+}
+
+impl From<BuiltIn> for NameWrapper {
+    fn from(val: BuiltIn) -> NameWrapper {
+        NameWrapper(VariableName::BuiltIn(val))
+    }
+}
+
+impl From<VariableName> for NameWrapper {
+    fn from(val: VariableName) -> NameWrapper {
+        NameWrapper(val)
+    }
+}
+
+impl From<Option<VariableName>> for NameWrapper where {
+    fn from(val: Option<VariableName>) -> NameWrapper {
+        match val {
+            Some(val) => val.into(),
+            None => NameWrapper(VariableName::None),
+        }
+    }
+}
+
 /// Shader attribute
 pub trait Input<T> {
-    fn input(&self, location: u32) -> Value<T>;
+    fn input<N>(&self, location: u32, name: N) -> Value<T> where N: Into<NameWrapper>;
 }
 
 /// Shader uniform
 pub trait Uniform<T> {
-    fn uniform(&self, location: u32) -> Value<T>;
+    fn uniform<N>(&self, location: u32, name: N) -> Value<T> where N: Into<NameWrapper>;
 }
 
 /// Shader outputs
 pub trait Output<T> {
-    fn output(&self, location: u32, value: Value<T>);
+    fn output<N>(&self, location: u32, name: N, value: Value<T>) where N: Into<NameWrapper>;
 }
 
 #[derive(Clone)]

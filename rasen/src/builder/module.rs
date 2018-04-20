@@ -18,6 +18,7 @@ use graph::*;
 use errors::*;
 use module::{FunctionRef, Module as RasenModule};
 use types::{TypeName, TypedValue};
+use node::VariableName;
 use super::Builder;
 use super::function::*;
 
@@ -174,16 +175,20 @@ impl ModuleBuilder {
                     )
                 ),
 
-                execution_modes: vec![
-                    Instruction::new(
-                        Op::ExecutionMode,
-                        None, None,
-                        vec![
-                            Operand::IdRef(ENTRY_ID),
-                            Operand::ExecutionMode(ExecutionMode::OriginUpperLeft)
-                        ]
-                    )
-                ],
+                execution_modes: match mod_type {
+                    ShaderType::Fragment => vec![
+                        Instruction::new(
+                            Op::ExecutionMode,
+                            None, None,
+                            vec![
+                                Operand::IdRef(ENTRY_ID),
+                                Operand::ExecutionMode(ExecutionMode::OriginUpperLeft),
+                            ],
+                        ),
+                    ],
+
+                    _ => Vec::new(),
+                },
 
                 types_global_values: vec![
                     Instruction::new(
@@ -297,6 +302,8 @@ impl ModuleBuilder {
                 ]
             )
         );
+
+        VariableName::Named(String::from("Uniforms")).decorate_variable(self, var_id);
 
         let res = (ty_id, var_id);
         self.uniform = Some(res);
@@ -708,13 +715,13 @@ impl Builder for ModuleBuilder {
         Ok(id)
     }
 
-    fn register_uniform(&mut self, location: u32, type_id: &'static TypeName) -> Word {
-        let (_, var_id) = self.get_uniform_block();
+    fn register_uniform(&mut self, location: u32, type_id: &'static TypeName) -> (Word, Word) {
+        let (struct_id, var_id) = self.get_uniform_block();
 
         let ty_id = self.register_type(type_id);
         self.uniforms.insert(location, (ty_id, type_id));
 
-        var_id
+        (struct_id, var_id)
     }
 
     fn push_instruction(&mut self, inst: Instruction) {
@@ -735,6 +742,10 @@ impl Builder for ModuleBuilder {
 
     fn push_annotation(&mut self, inst: Instruction) {
         self.module.annotations.push(inst);
+    }
+
+    fn push_debug(&mut self, inst: Instruction) {
+        self.module.debugs.push(inst);
     }
     
     fn push_parameter(&mut self, _: Word, _: &'static TypeName, _: Instruction) -> Result<()> {

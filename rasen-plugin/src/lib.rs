@@ -121,6 +121,9 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
                     })
             };
 
+            let attr_names: Vec<_> = attributes.iter().map(|id| id.to_string()).collect();
+            let uni_names: Vec<_> = uniforms.iter().map(|id| id.to_string()).collect();
+
             let (output, outputs) = match *output {
                 FunctionRetTy::Ty(ref ty) => match ty.node {
                     TyKind::Tup(ref fields) => {
@@ -152,10 +155,10 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
                 #[allow(dead_code)]
                 pub fn #aux_name() -> Module {
                     let module = Module::new();
-                    #( let #attributes = module.input(#attr_id); )*
-                    #( let #uniforms = module.uniform(#uni_id); )*
+                    #( let #attributes = module.input(#attr_id, #attr_names); )*
+                    #( let #uniforms = module.uniform(#uni_id, #uni_names); )*
                     let #output = #fn_name( #( #args ),* );
-                    #( module.output(#out_id, #outputs); )*
+                    #( module.output(#out_id, None, #outputs); )*
                     module
                 }
             })

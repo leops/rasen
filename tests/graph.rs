@@ -1,13 +1,13 @@
 fn build_basic_vert() -> Graph {
     let mut graph = Graph::default();
 
-    let pos = graph.add_node(Node::Input(0, TypeName::VEC3));
-    let normal = graph.add_node(Node::Input(1, TypeName::VEC3));
-    let uv = graph.add_node(Node::Input(2, TypeName::VEC2));
+    let pos = graph.add_node(Node::Input(0, TypeName::VEC3, VariableName::Named(String::from("a_pos"))));
+    let normal = graph.add_node(Node::Input(1, TypeName::VEC3, VariableName::Named(String::from("a_normal"))));
+    let uv = graph.add_node(Node::Input(2, TypeName::VEC2, VariableName::Named(String::from("a_uv"))));
 
-    let projection = graph.add_node(Node::Uniform(0, TypeName::MAT4));
-    let view = graph.add_node(Node::Uniform(1, TypeName::MAT4));
-    let model = graph.add_node(Node::Uniform(2, TypeName::MAT4));
+    let projection = graph.add_node(Node::Uniform(0, TypeName::MAT4, VariableName::Named(String::from("u_projection"))));
+    let view = graph.add_node(Node::Uniform(1, TypeName::MAT4, VariableName::Named(String::from("u_view"))));
+    let model = graph.add_node(Node::Uniform(2, TypeName::MAT4, VariableName::Named(String::from("u_model"))));
 
     let one = graph.add_node(Node::Constant(TypedValue::Float(1.0)));
 
@@ -28,9 +28,9 @@ fn build_basic_vert() -> Graph {
     let norm_4 = graph.add_node(Node::Construct(TypeName::VEC4));
     let norm_3 = graph.add_node(Node::Construct(TypeName::VEC3));
 
-    let o_pos = graph.add_node(Node::Output(0, TypeName::VEC4));
-    let o_norm = graph.add_node(Node::Output(1, TypeName::VEC3));
-    let o_uv = graph.add_node(Node::Output(2, TypeName::VEC2));
+    let o_pos = graph.add_node(Node::Output(0, TypeName::VEC4, VariableName::BuiltIn(BuiltIn::Position)));
+    let o_norm = graph.add_node(Node::Output(1, TypeName::VEC3, VariableName::Named(String::from("f_norm"))));
+    let o_uv = graph.add_node(Node::Output(2, TypeName::VEC2, VariableName::Named(String::from("f_uv"))));
 
     graph.add_edge(projection, vp, 0);
     graph.add_edge(view, vp, 1);
@@ -78,10 +78,10 @@ fn build_basic_vert() -> Graph {
 fn build_basic_frag() -> Graph {
     let mut graph = Graph::default();
 
-    let normal = graph.add_node(Node::Input(0, TypeName::VEC3));
-    let uv = graph.add_node(Node::Input(1, TypeName::VEC2));
+    let normal = graph.add_node(Node::Input(0, TypeName::VEC3, VariableName::Named(String::from("f_normal"))));
+    let uv = graph.add_node(Node::Input(1, TypeName::VEC2, VariableName::Named(String::from("f_uv"))));
 
-    let material = graph.add_node(Node::Uniform(0, TypeName::SAMPLER2D));
+    let material = graph.add_node(Node::Uniform(0, TypeName::SAMPLER2D, VariableName::Named(String::from("u_material"))));
 
     let min_light = graph.add_node(Node::Constant(TypedValue::Float(0.1)));
     let max_light = graph.add_node(Node::Constant(TypedValue::Float(1.0)));
@@ -93,7 +93,7 @@ fn build_basic_frag() -> Graph {
     let sample = graph.add_node(Node::Sample);
     let multiply = graph.add_node(Node::Multiply);
 
-    let color = graph.add_node(Node::Output(0, TypeName::VEC4));
+    let color = graph.add_node(Node::Output(0, TypeName::VEC4, VariableName::Named(String::from("o_col"))));
 
     graph.add_edge(normal, normalize, 0);
 

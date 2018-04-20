@@ -6,14 +6,12 @@ OpCapability Shader
 OpMemoryModel Logical GLSL450
 OpEntryPoint Vertex %4 "main" %28 %39 %54 %37 %51 %57
 OpName %11 "Uniforms"
-OpMemberName %9 0 "u_projection"
-OpMemberName %9 1 "u_view"
-OpMemberName %9 2 "u_model"
+OpMemberName %9 0 "projection"
+OpMemberName %9 1 "view"
+OpMemberName %9 2 "model"
 OpName %28 "a_pos"
 OpName %39 "a_normal"
-OpName %51 "f_norm"
 OpName %54 "a_uv"
-OpName %57 "f_uv"
 OpDecorate %9 Block
 OpMemberDecorate %9 0 MatrixStride 16
 OpMemberDecorate %9 0 ColMajor
@@ -23,7 +21,6 @@ OpMemberDecorate %9 2 MatrixStride 16
 OpMemberDecorate %9 2 ColMajor
 OpDecorate %28 Location 0
 OpDecorate %37 Location 0
-OpDecorate %37 BuiltIn Position
 OpDecorate %39 Location 1
 OpDecorate %51 Location 1
 OpDecorate %54 Location 2

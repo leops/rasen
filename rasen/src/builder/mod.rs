@@ -25,13 +25,14 @@ pub trait Builder {
     /// Add a new constant to the module, returning its ID
     fn register_constant(&mut self, constant: &TypedValue) -> Result<u32>;
 
-    fn register_uniform(&mut self, location: u32, type_id: &'static TypeName) -> Word;
+    fn register_uniform(&mut self, location: u32, type_id: &'static TypeName) -> (Word, Word);
 
     fn push_instruction(&mut self, inst: Instruction);
     fn push_declaration(&mut self, inst: Instruction);
     fn push_output(&mut self, id: Word);
     fn push_input(&mut self, id: Word);
     fn push_annotation(&mut self, inst: Instruction);
+    fn push_debug(&mut self, inst: Instruction);
 
     fn push_parameter(&mut self, location: Word, ty: &'static TypeName, inst: Instruction) -> Result<()>;
     fn set_return(&mut self, ty: &'static TypeName, inst: Instruction) -> Result<()>;
