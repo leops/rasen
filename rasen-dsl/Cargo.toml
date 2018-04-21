@@ -1,6 +1,6 @@
 [package]
 name = "rasen-dsl"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["l3ops <rasen@leops.me>"]
 description = "Wrapper for the Rasen compiler to write SPIR-V shaders in Rust"
 documentation = "https://docs.rs/rasen-dsl/"
@@ -24,7 +24,7 @@ default = []
 functions = []
 
 [dependencies]
-rasen = { version = "0.11.0", path = "../rasen" }
+rasen = { version = "0.12.0", path = "../rasen" }
 clippy = { version = "0.0.134", optional = true }
 
 [build-dependencies]
@@ -34,4 +34,4 @@ clippy = { version = "0.0.134", optional = true }
 
 [dev-dependencies]
 pretty_assertions = "0.5.1"
-rspirv = "0.5.1"
+rspirv = "0.5.2"

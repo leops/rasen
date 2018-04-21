@@ -15,6 +15,6 @@ clippy = { version = "0.0.134", optional = true }
 
 [dev-dependencies]
 pretty_assertions = "0.5.1"
-rspirv = "0.5.1"
-rasen = { version = "0.11.0", path = "../rasen" }
-rasen-dsl = { version = "0.1.0", path = "../rasen-dsl", features = ["functions"] }
+rspirv = "0.5.2"
+rasen = { version = "0.12.0", path = "../rasen" }
+rasen-dsl = { version = "0.2.0", path = "../rasen-dsl", features = ["functions"] }

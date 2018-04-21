@@ -1,6 +1,6 @@
 [package]
 name = "rasen"
-version = "0.11.0"
+version = "0.12.0"
 authors = ["l3ops <rasen@leops.me>"]
 description = "Build a SPIR-V module from a data flow graph"
 documentation = "https://docs.rs/rasen/"
@@ -29,8 +29,8 @@ default = []
 [dependencies]
 petgraph = "0.4.5"
 error-chain = "0.10.0"
-spirv_headers = "1.2.2"
-rspirv = "0.5.1"
+spirv_headers = "1.3.1"
+rspirv = "0.5.2"
 fnv = "1.0.6"
 clippy = { version = "0.0.177", optional = true }
 
