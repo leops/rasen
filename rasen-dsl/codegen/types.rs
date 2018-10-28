@@ -1,34 +1,41 @@
 //! GLSL Types declarations
 
-use quote::{Ident, Tokens};
-use codegen::defs::{Category, Type, all_types};
-use codegen::operations::match_values;
+use codegen::{
+    defs::{all_types, Category, Type},
+    operations::match_values,
+};
+use proc_macro2::{Ident, Literal, Span, TokenStream, TokenTree};
 
-fn trait_scalar(name: Ident, ty: Ident, (zero, one): (Ident, Ident)) -> Tokens {
+fn trait_scalar(name: Ident, ty: Ident, (zero, one): (TokenTree, TokenTree)) -> TokenStream {
     quote! {
-        impl Scalar for #name {
+        impl Base for #name {
             fn zero() -> Self { #zero }
             fn one() -> Self { #one }
         }
 
+        impl Scalar for #name {}
+
         impl ValueIter<#ty> for #name {
             type Iter = ::std::iter::Once<Value<#ty>>;
-            fn iter<'a>(obj: &Self) -> Self::Iter {
+            fn iter(obj: &Self) -> Self::Iter {
                 ::std::iter::once(obj.into())
             }
         }
     }
 }
 
-fn trait_numerical(name: Ident, pow_fn: Ident, pow_ty: Ident) -> Tokens {
+fn trait_numerical(name: Ident, pow_fn: Ident, pow_ty: Ident) -> TokenStream {
     quote! {
+        impl Math for #name {}
+
         impl Numerical for #name {
+            #[allow(clippy::cast_sign_loss)]
             fn pow(x: Self, y: Self) -> Self { x.#pow_fn(y as #pow_ty) }
         }
     }
 }
 
-fn trait_integer(name: Ident, is_signed: bool) -> Tokens {
+fn trait_integer(name: Ident, is_signed: bool) -> TokenStream {
     quote! {
         impl Integer for #name {
             fn is_signed() -> bool { #is_signed }
@@ -36,7 +43,7 @@ fn trait_integer(name: Ident, is_signed: bool) -> Tokens {
     }
 }
 
-fn trait_float(name: Ident, is_double: bool) -> Tokens {
+fn trait_float(name: Ident, is_double: bool) -> TokenStream {
     quote! {
         impl Floating for #name {
             fn is_double() -> bool { #is_double }
@@ -47,40 +54,68 @@ fn trait_float(name: Ident, is_double: bool) -> Tokens {
             fn sin(self) -> Self { self.sin() }
             fn cos(self) -> Self { self.cos() }
             fn tan(self) -> Self { self.tan() }
+            fn ln(self) -> Self { self.ln() }
+            fn abs(self) -> Self { self.abs() }
+            fn two() -> Self { 2.0 }
+            fn three() -> Self { 3.0 }
         }
     }
 }
 
-fn trait_vector(name: Ident, component_count: u32, component_type: Ident, (zero, one): (Ident, Ident)) -> Tokens {
+fn trait_vector(
+    name: Ident,
+    component_count: u32,
+    component_type: Ident,
+    (zero, one): (TokenTree, TokenTree),
+) -> TokenStream {
     let fields_zero: Vec<_> = (0..component_count).map(|_| zero.clone()).collect();
     let fields_one: Vec<_> = (0..component_count).map(|_| one.clone()).collect();
     let obj_fields: Vec<_> = {
         (0..component_count)
             .map(|i| {
-                let idx = Ident::from(format!("{}", i));
+                let idx = Literal::u32_unsuffixed(i);
                 quote! { obj.#idx.into() }
             })
             .collect()
     };
 
+    let math = if component_type == "Bool" {
+        quote!{}
+    } else {
+        quote! {
+            impl Math for #name {}
+        }
+    };
+
     quote! {
-        impl Vector<#component_type> for #name {
+        impl Base for #name {
             fn zero() -> Self { #name( #( #fields_zero ),* ) }
             fn one() -> Self { #name( #( #fields_one ),* ) }
+        }
+
+        #math
+
+        impl Vector<#component_type> for #name {
             fn component_count() -> u32 { #component_count }
         }
 
         impl ValueIter<#component_type> for #name {
             type Iter = ::std::vec::IntoIter<Value<#component_type>>;
-            fn iter<'a>(obj: &Self) -> Self::Iter {
+            fn iter(obj: &Self) -> Self::Iter {
                 vec![ #( #obj_fields ),* ].into_iter()
             }
         }
     }
 }
 
-fn trait_matrix(name: Ident, column_count: u32, column_type: Ident, scalar_type: Ident, (zero, one): (Ident, Ident)) -> Tokens {
-    let identity: Vec<_> = {
+fn trait_matrix(
+    name: Ident,
+    column_count: u32,
+    column_type: Ident,
+    scalar_type: Ident,
+    (zero, one): (TokenTree, TokenTree),
+) -> TokenStream {
+    let identity: Vec<TokenTree> = {
         (0..column_count)
             .flat_map(|x| {
                 (0..column_count)
@@ -92,13 +127,13 @@ fn trait_matrix(name: Ident, column_count: u32, column_type: Ident, scalar_type:
 
     quote! {
         impl Matrix<#column_type, #scalar_type> for #name {
-            fn identity() -> Self { #name( #identity ) }
+            fn identity() -> Self { #name( [ #( #identity, )* ] ) }
             fn column_count() -> u32 { #column_count }
         }
 
         impl ValueIter<#scalar_type> for #name {
             type Iter = ::std::vec::IntoIter<Value<#scalar_type>>;
-            fn iter<'a>(obj: &Self) -> Self::Iter {
+            fn iter(obj: &Self) -> Self::Iter {
                 let lst: Vec<_> = obj.0.into_iter().map(|s| s.into()).collect();
                 lst.into_iter()
             }
@@ -106,52 +141,65 @@ fn trait_matrix(name: Ident, column_count: u32, column_type: Ident, scalar_type:
     }
 }
 
-fn type_values(ty: &str) -> (Ident, Ident) {
+fn type_values(ty: &str) -> (TokenTree, TokenTree) {
     match ty {
-        "bool" => {
-            (Ident::from("false"), Ident::from("true"))
-        },
+        "bool" => (
+            TokenTree::Ident(Ident::new("false", Span::call_site())),
+            TokenTree::Ident(Ident::new("true", Span::call_site())),
+        ),
 
-        "i32" | "u32" => {
-            (Ident::from("0"), Ident::from("1"))
-        },
+        "i32" | "u32" => (
+            TokenTree::Literal(Literal::u8_unsuffixed(0)),
+            TokenTree::Literal(Literal::u8_unsuffixed(1)),
+        ),
 
-        "f32" | "f64" => {
-            (Ident::from("0.0"), Ident::from("1.0"))
-        },
+        "f32" | "f64" => (
+            TokenTree::Literal(Literal::f32_unsuffixed(0.0)),
+            TokenTree::Literal(Literal::f32_unsuffixed(1.0)),
+        ),
 
         _ => unreachable!(),
     }
 }
 
-fn type_scalar(name: &Ident, ty: &'static str) -> Tokens {
-    let mut traits = vec![
-        trait_scalar(name.clone(), Ident::from(ty), type_values(ty)),
-    ];
+fn type_scalar(name: &Ident, ty: &'static str) -> TokenStream {
+    let mut traits = vec![trait_scalar(
+        name.clone(),
+        Ident::new(ty, Span::call_site()),
+        type_values(ty),
+    )];
 
     match ty {
-        "bool" => {},
+        "bool" => {}
 
         "i32" | "u32" => {
-            traits.push(trait_numerical(name.clone(), Ident::from("pow"), Ident::from("u32")));
+            traits.push(trait_numerical(
+                name.clone(),
+                Ident::new("pow", Span::call_site()),
+                Ident::new("u32", Span::call_site()),
+            ));
             traits.push(trait_integer(name.clone(), ty == "i32"));
-        },
+        }
 
         "f32" | "f64" => {
-            traits.push(trait_numerical(name.clone(), Ident::from("powf"), Ident::from(ty)));
+            traits.push(trait_numerical(
+                name.clone(),
+                Ident::new("powf", Span::call_site()),
+                Ident::new(ty, Span::call_site()),
+            ));
             traits.push(trait_float(name.clone(), ty == "f64"));
-        },
+        }
 
         _ => unreachable!(),
     }
 
-    let ty = Ident::from(ty);
+    let ty = Ident::new(ty, Span::call_site());
     quote! {
         pub type #name = #ty;
         #( #traits )*
 
         impl Into<Value<#name>> for #name {
-            fn into(self) -> Value<#name> {
+            fn into(self) -> Value<Self> {
                 Value::Concrete(self)
             }
         }
@@ -162,9 +210,9 @@ fn type_scalar(name: &Ident, ty: &'static str) -> Tokens {
         }
 
         impl IntoValue for #name {
-            type Output = #name;
+            type Output = Self;
 
-            fn into_value(self) -> Value<#name> {
+            fn into_value(self) -> Value<Self> {
                 Value::Concrete(self)
             }
 
@@ -175,51 +223,66 @@ fn type_scalar(name: &Ident, ty: &'static str) -> Tokens {
     }
 }
 
-fn type_vector(name: &Ident, ty: &'static str, component: Option<Box<Type>>, size: Option<u32>) -> Tokens {
+fn type_vector(
+    name: &Ident,
+    ty: &'static str,
+    component: Option<Box<Type>>,
+    size: Option<u32>,
+) -> TokenStream {
     let component = component.unwrap();
     let size = size.unwrap();
 
-    let traits = vec![
-        trait_vector(name.clone(), size, component.name.clone(), type_values(ty))
-    ];
+    let traits = vec![trait_vector(
+        name.clone(),
+        size,
+        component.name.clone(),
+        type_values(ty),
+    )];
 
-    let ty = Ident::from(ty);
+    let ty = Ident::new(ty, Span::call_site());
     let types = (0..size).map(|_| ty.clone());
 
     let fields = (0..size).map(|i| {
-        let id = Ident::from(format!("{}", i));
+        let id = Literal::u32_unsuffixed(i);
         quote! { self.#id }
     });
 
     let into_idx: Vec<_> = {
         (0..size)
-        .map(|i| {
-            let index = i as usize;
-            quote! { arr[#index] }
-        })
-        .collect()
+            .map(|i| {
+                let index = i as usize;
+                quote! { arr[#index] }
+            })
+            .collect()
     };
 
     let index_arms = (0..size).map(|i| {
-        let index = Ident::from(format!("{}", i));
+        let index = Literal::u32_unsuffixed(i);
         quote! { #i => &self.#index }
     });
 
-    let lower = Ident::from(name.as_ref().to_lowercase());
-    let upper = Ident::from(name.as_ref().to_uppercase());
+    let lower = Ident::new(&name.to_string().to_lowercase(), Span::call_site());
+    let upper = Ident::new(&name.to_string().to_uppercase(), Span::call_site());
     let indices: Vec<u32> = (0..size).collect();
-    let generics: Vec<_> = (0..size).map(|i| Ident::from(format!("T{}", i))).collect();
-    let args1: Vec<_> = generics.iter().map(|gen| Ident::from(gen.as_ref().to_lowercase())).collect();
+    let generics: Vec<_> = (0..size)
+        .map(|i| Ident::new(&format!("T{}", i), Span::call_site()))
+        .collect();
+    let args1: Vec<_> = generics
+        .iter()
+        .map(|gen| Ident::new(&gen.to_string().to_lowercase(), Span::call_site()))
+        .collect();
     let args2 = args1.clone();
     let args3 = args1.clone();
     let arg_list: Vec<_> = {
-        generics.iter()
+        generics
+            .iter()
             .zip(args1.iter())
             .map(|(gen, name)| quote! { #name: #gen })
             .collect()
     };
     let constraints: Vec<_> = {
-        generics.iter()
+        generics
+            .iter()
             .map(|gen| {
                 let comp = component.name.clone();
                 quote! { #gen: IntoValue<Output=#comp> }
@@ -245,7 +308,7 @@ fn type_vector(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
         #( #traits )*
 
         impl From<Vec<#ty>> for #name {
-            fn from(arr: Vec<#ty>) -> #name {
+            fn from(arr: Vec<#ty>) -> Self {
                 #name( #( #into_idx ),* )
             }
         }
@@ -261,15 +324,15 @@ fn type_vector(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
         }
 
         impl Into<Value<#name>> for #name {
-            fn into(self) -> Value<#name> {
+            fn into(self) -> Value<Self> {
                 Value::Concrete(self)
             }
         }
 
         impl IntoValue for #name {
-            type Output = #name;
+            type Output = Self;
 
-            fn into_value(self) -> Value<#name> {
+            fn into_value(self) -> Value<Self> {
                 Value::Concrete(self)
             }
 
@@ -285,30 +348,45 @@ fn type_vector(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
     }
 }
 
-fn type_matrix(name: &Ident, ty: &'static str, component: Option<Box<Type>>, size: Option<u32>) -> Tokens {
+fn type_matrix(
+    name: &Ident,
+    ty: &'static str,
+    component: Option<Box<Type>>,
+    size: Option<u32>,
+) -> TokenStream {
     let vector = component.unwrap();
     let scalar = vector.clone().component.unwrap();
     let size = size.unwrap();
 
-    let traits = vec![
-        trait_matrix(name.clone(), size, vector.name.clone(), scalar.name.clone(), type_values(ty))
-    ];
+    let traits = vec![trait_matrix(
+        name.clone(),
+        size,
+        vector.name.clone(),
+        scalar.name.clone(),
+        type_values(ty),
+    )];
 
-    let ty = Ident::from(ty);
+    let ty = Ident::new(ty, Span::call_site());
     let mat_size = (size * size) as usize;
-    
-    let lower = Ident::from(name.as_ref().to_lowercase());
-    let upper = Ident::from(name.as_ref().to_uppercase());
+
+    let lower = Ident::new(&name.to_string().to_lowercase(), Span::call_site());
+    let upper = Ident::new(&name.to_string().to_uppercase(), Span::call_site());
     let indices: Vec<u32> = (0..size).collect();
-    let generics: Vec<_> = (0..size).map(|i| Ident::from(format!("T{}", i))).collect();
-    let args1: Vec<_> = generics.iter().map(|gen| Ident::from(gen.as_ref().to_lowercase())).collect();
+    let generics: Vec<_> = (0..size)
+        .map(|i| Ident::new(&format!("T{}", i), Span::call_site()))
+        .collect();
+    let args1: Vec<_> = generics
+        .iter()
+        .map(|gen| Ident::new(&gen.to_string().to_lowercase(), Span::call_site()))
+        .collect();
     let args2 = args1.clone();
     let args3: Vec<_> = {
-        args1.iter()
+        args1
+            .iter()
             .flat_map(|ident| -> Vec<_> {
                 (0..size)
                     .map(|index| {
-                        let index = Ident::from(format!("{}", index));
+                        let index = Literal::u32_unsuffixed(index);
                         quote! { #ident.#index }
                     })
                     .collect()
@@ -316,13 +394,15 @@ fn type_matrix(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
             .collect()
     };
     let arg_list: Vec<_> = {
-        generics.iter()
+        generics
+            .iter()
             .zip(args1.iter())
             .map(|(gen, name)| quote! { #name: #gen })
             .collect()
     };
     let constraints: Vec<_> = {
-        generics.iter()
+        generics
+            .iter()
             .map(|gen| {
                 let comp = vector.name.clone();
                 quote! { #gen: IntoValue<Output=#comp> }
@@ -354,7 +434,7 @@ fn type_matrix(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
         }
 
         impl Into<Value<#name>> for #name {
-            fn into(self) -> Value<#name> {
+            fn into(self) -> Value<Self> {
                 Value::Concrete(self)
             }
         }
@@ -367,9 +447,9 @@ fn type_matrix(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
         }
 
         impl IntoValue for #name {
-            type Output = #name;
+            type Output = Self;
 
-            fn into_value(self) -> Value<#name> {
+            fn into_value(self) -> Value<Self> {
                 Value::Concrete(self)
             }
 
@@ -385,7 +465,7 @@ fn type_matrix(name: &Ident, ty: &'static str, component: Option<Box<Type>>, siz
     }
 }
 
-pub fn type_structs() -> Vec<Tokens> {
+pub fn type_structs() -> Vec<TokenStream> {
     all_types().iter()
         .filter_map(|ty| {
             let Type { name, category, ty, component, size, .. } = ty.clone();
@@ -395,8 +475,8 @@ pub fn type_structs() -> Vec<Tokens> {
                 Category::MATRIX => type_matrix(&name, ty, component, size),
             };
 
-            let upper = Ident::from(
-                name.as_ref().to_string().to_uppercase()
+            let upper = Ident::new(
+                &name.to_string().to_string().to_uppercase(), Span::call_site()
             );
 
             Some(quote! {

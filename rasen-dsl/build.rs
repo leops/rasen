@@ -1,13 +1,16 @@
 //! Internal procedural macro provider for the rasen-dsl crate
 
 #![recursion_limit = "256"]
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
+#![warn(clippy::pedantic)]
 
 extern crate syn;
-#[macro_use] extern crate quote;
+#[macro_use]
+extern crate quote;
+extern crate proc_macro2;
 
+use proc_macro2::TokenStream;
 use std::env;
+use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -15,12 +18,29 @@ use std::path::Path;
 mod codegen;
 use codegen::*;
 
+fn write_tokens(file: &mut File, tokens: TokenStream) {
+    let mut line = String::new();
+    write!(line, "{}", tokens).unwrap();
+
+    writeln!(file, "{}", {
+        line.chars()
+            .flat_map(|chr| match chr {
+                '{' => vec!['{', '\n'],
+                ';' => vec![';', '\n'],
+                '}' => vec!['\n', '}'],
+                any => vec![any],
+            })
+            .collect::<String>()
+    })
+    .unwrap();
+}
+
 /// Create the declarations of all the GLSL type structs
 pub fn decl_types(out_dir: &str) {
     let path = Path::new(out_dir).join("types.rs");
     let mut file = File::create(&path).unwrap();
     for tokens in types::type_structs() {
-        writeln!(file, "{}", tokens).unwrap();
+        write_tokens(&mut file, tokens);
     }
 }
 
@@ -30,13 +50,13 @@ pub fn decl_operations(out_dir: &str) {
     let path = Path::new(out_dir).join("operations.rs");
     let mut file = File::create(&path).unwrap();
     for tokens in operations::impl_operations() {
-        writeln!(file, "{}", tokens).unwrap();
+        write_tokens(&mut file, tokens);
     }
     for tokens in math::impl_math() {
-        writeln!(file, "{}", tokens).unwrap();
+        write_tokens(&mut file, tokens);
     }
     for tokens in functions::impl_fn() {
-        writeln!(file, "{}", tokens).unwrap();
+        write_tokens(&mut file, tokens);
     }
 }
 

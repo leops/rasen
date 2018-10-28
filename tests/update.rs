@@ -1,19 +1,26 @@
 mod _update_utils {
-    use std::{env, str, fmt};
-    use std::path::PathBuf;
-    use std::fs::OpenOptions;
-    use std::io::prelude::*;
-    use std::io::{SeekFrom, ErrorKind};
-    use std::process::Command;
-    use std::ffi::OsStr;
-    use std::convert::TryFrom;
-    use rspirv::binary::{Assemble, Disassemble};
-    use rspirv::mr::{Module as SpirvModule, load_words};
-    use rasen::errors::{self, Error};
-    use rasen::prelude::{ShaderType, ModuleBuilder};
+    use rasen::{
+        errors::{self, Error},
+        prelude::ModuleBuilder,
+    };
+    use rspirv::{
+        binary::{Assemble, Disassemble},
+        mr::{load_words, Module as SpirvModule},
+    };
+    use std::{
+        convert::TryFrom,
+        env,
+        ffi::OsStr,
+        fmt,
+        fs::OpenOptions,
+        io::{prelude::*, ErrorKind, SeekFrom},
+        path::PathBuf,
+        process::Command,
+        str,
+    };
 
-    pub enum ModuleWrapper { 
-        Module(SpirvModule),
+    pub enum ModuleWrapper {
+        Module(Box<SpirvModule>),
         String(String),
         Static(&'static str),
     }
@@ -21,9 +28,9 @@ mod _update_utils {
     impl Clone for ModuleWrapper {
         fn clone(&self) -> ModuleWrapper {
             match *self {
-                ModuleWrapper::Module(ref module) => ModuleWrapper::Module(
-                    load_words(module.assemble()).unwrap()
-                ),
+                ModuleWrapper::Module(ref module) => {
+                    ModuleWrapper::Module(Box::new(load_words(module.assemble()).unwrap()))
+                }
                 ModuleWrapper::String(ref string) => ModuleWrapper::String(string.clone()),
                 ModuleWrapper::Static(string) => ModuleWrapper::Static(string),
             }
@@ -66,16 +73,17 @@ mod _update_utils {
         }
     }
 
-    pub fn build_module<'a, I>(graph: &'a I, mod_type: ShaderType) -> errors::Result<ModuleWrapper> where ModuleBuilder: TryFrom<(&'a I, ShaderType), Error = Error> {
-        Ok(ModuleWrapper::Module(ModuleBuilder::try_from((graph, mod_type))?.build()?))
+    pub fn build_module<'a, I, T>(graph: &'a I, mod_type: T) -> errors::Result<ModuleWrapper>
+    where
+        ModuleBuilder: TryFrom<(&'a I, T), Error = Error>,
+    {
+        Ok(ModuleWrapper::Module(Box::new(
+            ModuleBuilder::try_from((graph, mod_type))?.build()?,
+        )))
     }
 
     fn try_run_command(name: &str, args: &[&OsStr]) -> Result<bool, String> {
-        let res = {
-            Command::new(name)
-                .args(args)
-                .output()
-        };
+        let res = { Command::new(name).args(args).output() };
 
         match res {
             Ok(ref output) if output.status.success() => Ok(true),
@@ -88,7 +96,7 @@ mod _update_utils {
                 ErrorKind::NotFound => {
                     println!("Command {} not in path, skipping", name);
                     Ok(false)
-                },
+                }
                 _ => Err(format!("{:?}", error)),
             },
         }
@@ -100,7 +108,7 @@ mod _update_utils {
                 .read(true)
                 .write(true)
                 .open(&path)
-                .expect(&format!("Could not open {}", path.display()))
+                .unwrap_or_else(|_| panic!("Could not open {}", path.display()))
         };
 
         let check_content = {
@@ -126,7 +134,14 @@ mod _update_utils {
         write!(file, "{}", new).expect("write");
     }
 
-    pub fn check_or_update_impl<T>(ref_name: &'static str, file: &'static str, ref_value: &'static ModuleWrapper, actual: T) where ModuleWrapper: From<T> {
+    pub fn check_or_update_impl<T>(
+        ref_name: &'static str,
+        file: &'static str,
+        ref_value: &'static ModuleWrapper,
+        actual: T,
+    ) where
+        ModuleWrapper: From<T>,
+    {
         let actual = ModuleWrapper::from(actual);
         if env::vars().any(|(name, val)| name == "RASEN_ALLOW_UPDATE" && val == "1") {
             if &actual != ref_value {
@@ -143,9 +158,10 @@ mod _update_utils {
 
                 let mut out_path = path.clone();
                 out_path.set_file_name(
-                    path.file_name().unwrap()
+                    path.file_name()
+                        .unwrap()
                         .to_string_lossy()
-                        .replace("spvasm", "spv")
+                        .replace("spvasm", "spv"),
                 );
 
                 let out_arg: &OsStr = "-o".as_ref();
@@ -158,7 +174,7 @@ mod _update_utils {
                 }
             }
         } else {
-            assert_eq!(&actual, ref_value);
+            assert_eq!(ref_value, &actual);
         }
     }
 }
@@ -167,9 +183,8 @@ pub use self::_update_utils::build_module;
 
 macro_rules! check_or_update {
     ($actual:expr, $reference:expr) => {{
-        static REF: self::_update_utils::ModuleWrapper = {
-            self::_update_utils::ModuleWrapper::Static(include_str!($reference))
-        };
+        static REF: self::_update_utils::ModuleWrapper =
+            { self::_update_utils::ModuleWrapper::Static(include_str!($reference)) };
 
         self::_update_utils::check_or_update_impl($reference, file!(), &REF, $actual)
     }};

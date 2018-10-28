@@ -1,8 +1,8 @@
 //! A Module is the advanced entry point for the Rasen compiler. It holds the graph for the main function,
 //! as well as the subgraphs for all the user-defined functions
 
-use std::ops::{Index, IndexMut};
 use graph::Graph;
+use std::ops::{Index, IndexMut};
 
 /// An opaque pointer struct to a function
 #[derive(Copy, Clone, Debug)]
@@ -24,7 +24,7 @@ impl Module {
     }
 
     /// Get a reference to a function's graph from its index
-    pub fn function<'a>(&'a mut self, index: FunctionRef) -> Option<&'a mut Graph> {
+    pub fn function(&mut self, index: FunctionRef) -> Option<&mut Graph> {
         self.functions.get_mut(index.0)
     }
 }

@@ -1,3 +1,5 @@
+#![feature(try_from)]
+
 extern crate rasen;
 #[macro_use]
 extern crate pretty_assertions;
@@ -11,14 +13,28 @@ include!("../../tests/update.rs");
 #[test]
 fn test_build_basic_vert() {
     let graph = build_basic_vert();
-    let assembly = build_module(&graph, ShaderType::Vertex).unwrap();
+    let assembly = build_module(
+        &graph,
+        Settings {
+            mod_type: ShaderType::Vertex,
+            uniforms_name: Some(String::from("Uniforms")),
+        },
+    )
+    .unwrap();
     check_or_update!(assembly, "../../tests/basic.vert.spvasm");
 }
 
 #[test]
 fn test_build_basic_frag() {
     let graph = build_basic_frag();
-    let assembly = build_module(&graph, ShaderType::Fragment).unwrap();
+    let assembly = build_module(
+        &graph,
+        Settings {
+            mod_type: ShaderType::Fragment,
+            uniforms_name: Some(String::from("Test1")),
+        },
+    )
+    .unwrap();
     check_or_update!(assembly, "../../tests/basic.frag.spvasm");
 }
 
@@ -37,13 +53,24 @@ fn test_build_function() {
 
     {
         let graph = &mut module.main;
-        let input = graph.add_node(Node::Input(0, TypeName::FLOAT, VariableName::Named(String::from("a_input"))));
+        let input = graph.add_node(Node::Input(
+            0,
+            TypeName::FLOAT,
+            VariableName::Named(String::from("a_input")),
+        ));
         let call = graph.add_node(Node::Call(func));
         let output = graph.add_node(Node::Output(0, TypeName::FLOAT, VariableName::None));
         graph.add_edge(input, call, 0);
         graph.add_edge(call, output, 0);
     }
 
-    let assembly = build_module(&module, ShaderType::Vertex).unwrap();
+    let assembly = build_module(
+        &module,
+        Settings {
+            mod_type: ShaderType::Vertex,
+            uniforms_name: Some(String::from("Uniforms")),
+        },
+    )
+    .unwrap();
     check_or_update!(assembly, "../../tests/functions.spvasm");
 }

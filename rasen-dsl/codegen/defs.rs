@@ -1,16 +1,14 @@
 //! Type metadata providers
 
-use quote::Ident;
+use proc_macro2::{Ident, Span};
 
 const INTS: [(&'static str, &'static str, &'static str); 3] = [
     ("Bool", "b", "bool"),
     ("Int", "i", "i32"),
     ("UInt", "u", "u32"),
 ];
-const FLOATS: [(&'static str, &'static str, &'static str); 2] = [
-    ("Float", "", "f32"),
-    ("Double", "d", "f64"),
-];
+const FLOATS: [(&'static str, &'static str, &'static str); 2] =
+    [("Float", "", "f32"), ("Double", "d", "f64")];
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum Category {
@@ -30,7 +28,7 @@ pub struct Type {
 
 fn scalar_type(name: &str, ty: &'static str) -> Type {
     Type {
-        name: Ident::from(name),
+        name: Ident::new(&name, Span::call_site()),
         category: Category::SCALAR,
         component: None,
         size: None,
@@ -40,7 +38,7 @@ fn scalar_type(name: &str, ty: &'static str) -> Type {
 
 fn vector_type(name: &str, scalar: &str, ty: &'static str, size: u32) -> Type {
     Type {
-        name: Ident::from(name),
+        name: Ident::new(&name, Span::call_site()),
         category: Category::VECTOR,
         component: Some(Box::new(scalar_type(scalar, ty))),
         size: Some(size),
@@ -50,7 +48,7 @@ fn vector_type(name: &str, scalar: &str, ty: &'static str, size: u32) -> Type {
 
 fn matrix_type(name: &str, vec: &str, scalar: &str, ty: &'static str, size: u32) -> Type {
     Type {
-        name: Ident::from(name),
+        name: Ident::new(&name, Span::call_site()),
         category: Category::MATRIX,
         component: Some(Box::new(vector_type(vec, scalar, ty, size))),
         size: Some(size),
@@ -90,6 +88,12 @@ pub struct Node {
     pub result: Type,
 }
 
+impl Node {
+    pub fn is_value(&self) -> bool {
+        self.args.is_some()
+    }
+}
+
 pub fn all_nodes() -> Vec<Node> {
     let mut res = Vec::new();
 
@@ -101,10 +105,8 @@ pub fn all_nodes() -> Vec<Node> {
         });
 
         res.push(Node {
-            name: Ident::from("Value"),
-            args: Some(vec![
-                result.clone(),
-            ]),
+            name: Ident::new("Value", Span::call_site()),
+            args: Some(vec![result.clone()]),
             result: result.clone(),
         });
     }

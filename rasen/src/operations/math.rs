@@ -234,18 +234,28 @@ macro_rules! impl_math_op {
                         _ if l_type == r_type && r_type.is_signed() => {
                             let res_type = builder.register_type(l_type);
 
-                            builder.push_instruction(Instruction::new(Op::$sopcode, Some(res_type), Some(result_id), vec![ Operand::IdRef(l_value),
-                                Operand::IdRef(r_value),
-                             ]));
+                            builder.push_instruction(Instruction::new(
+                                Op::$sopcode,
+                                Some(res_type), Some(result_id),
+                                vec![
+                                    Operand::IdRef(l_value),
+                                    Operand::IdRef(r_value),
+                                ]
+                            ));
 
                             l_type
                         },
                         (&Vec(l_len, l_scalar), &Vec(r_len, r_scalar)) if l_len == r_len && l_scalar == r_scalar && r_scalar.is_signed() => {
                             let res_type = builder.register_type(l_type);
 
-                            builder.push_instruction(Instruction::new(Op::$sopcode, Some(res_type), Some(result_id), vec![ Operand::IdRef(l_value),
-                                Operand::IdRef(r_value),
-                             ]));
+                            builder.push_instruction(Instruction::new(
+                                Op::$sopcode,
+                                Some(res_type), Some(result_id),
+                                vec![
+                                    Operand::IdRef(l_value),
+                                    Operand::IdRef(r_value),
+                                ]
+                            ));
 
                             l_type
                         },
@@ -253,18 +263,28 @@ macro_rules! impl_math_op {
                         _ if l_type == r_type && r_type.is_integer() && !r_type.is_signed() => {
                             let res_type = builder.register_type(l_type);
 
-                            builder.push_instruction(Instruction::new(Op::$uopcode, Some(res_type), Some(result_id), vec![ Operand::IdRef(l_value),
-                                Operand::IdRef(r_value),
-                             ]));
+                            builder.push_instruction(Instruction::new(
+                                Op::$uopcode,
+                                Some(res_type), Some(result_id),
+                                vec![
+                                    Operand::IdRef(l_value),
+                                    Operand::IdRef(r_value),
+                                ]
+                            ));
 
                             l_type
                         },
                         (&Vec(l_len, l_scalar), &Vec(r_len, r_scalar)) if l_len == r_len && l_scalar == r_scalar && r_scalar.is_integer() => {
                             let res_type = builder.register_type(l_type);
 
-                            builder.push_instruction(Instruction::new(Op::$uopcode, Some(res_type), Some(result_id), vec![ Operand::IdRef(l_value),
-                                Operand::IdRef(r_value),
-                             ]));
+                            builder.push_instruction(Instruction::new(
+                                Op::$uopcode,
+                                Some(res_type), Some(result_id),
+                                vec![
+                                    Operand::IdRef(l_value),
+                                    Operand::IdRef(r_value),
+                                ]
+                            ));
 
                             l_type
                         },
@@ -272,9 +292,14 @@ macro_rules! impl_math_op {
                         _ if l_type == r_type && r_type.is_float() => {
                             let res_type = builder.register_type(l_type);
 
-                            builder.push_instruction(Instruction::new(Op::$fopcode, Some(res_type), Some(result_id), vec![ Operand::IdRef(l_value),
-                                Operand::IdRef(r_value),
-                             ]));
+                            builder.push_instruction(Instruction::new(
+                                Op::$fopcode,
+                                Some(res_type), Some(result_id),
+                                vec![
+                                    Operand::IdRef(l_value),
+                                    Operand::IdRef(r_value),
+                                ],
+                            ));
 
                             l_type
                         },
@@ -304,18 +329,28 @@ macro_rules! impl_math_op {
                         _ if l_type == r_type && r_type.is_integer() => {
                             let res_type = builder.register_type(l_type);
 
-                            builder.push_instruction(Instruction::new(Op::$iopcode, Some(res_type), Some(result_id), vec![ Operand::IdRef(l_value),
-                                Operand::IdRef(r_value),
-                             ]));
+                            builder.push_instruction(Instruction::new(
+                                Op::$iopcode,
+                                Some(res_type), Some(result_id),
+                                vec![
+                                    Operand::IdRef(l_value),
+                                    Operand::IdRef(r_value),
+                                ]
+                            ));
 
                             l_type
                         },
                         (&Vec(l_len, l_scalar), &Vec(r_len, r_scalar)) if l_len == r_len && l_scalar == r_scalar && r_scalar.is_integer() => {
                             let res_type = builder.register_type(l_type);
 
-                            builder.push_instruction(Instruction::new(Op::$iopcode, Some(res_type), Some(result_id), vec![ Operand::IdRef(l_value),
-                                Operand::IdRef(r_value),
-                             ]));
+                            builder.push_instruction(Instruction::new(
+                                Op::$iopcode,
+                                Some(res_type), Some(result_id),
+                                vec![
+                                    Operand::IdRef(r_value),
+                                    Operand::IdRef(l_value),
+                                ]
+                            ));
 
                             l_type
                         },
@@ -323,18 +358,28 @@ macro_rules! impl_math_op {
                         _ if l_type == r_type && r_type.is_float() => {
                             let res_type = builder.register_type(l_type);
 
-                            builder.push_instruction(Instruction::new(Op::$fopcode, Some(res_type), Some(result_id), vec![ Operand::IdRef(r_value),
-                                Operand::IdRef(l_value),
-                             ]));
+                            builder.push_instruction(Instruction::new(
+                                Op::$fopcode,
+                                Some(res_type), Some(result_id),
+                                vec![
+                                    Operand::IdRef(l_value),
+                                    Operand::IdRef(r_value),
+                                ]
+                            ));
 
                             l_type
                         },
                         (&Vec(l_len, l_scalar), &Vec(r_len, r_scalar)) if l_len == r_len && l_scalar == r_scalar && l_scalar.is_float() => {
                             let res_type = builder.register_type(l_type);
 
-                            builder.push_instruction(Instruction::new(Op::$fopcode, Some(res_type), Some(result_id), vec![ Operand::IdRef(r_value),
-                                Operand::IdRef(l_value),
-                             ]));
+                            builder.push_instruction(Instruction::new(
+                                Op::$fopcode,
+                                Some(res_type), Some(result_id),
+                                vec![
+                                    Operand::IdRef(l_value),
+                                    Operand::IdRef(r_value),
+                                ]
+                            ));
 
                             l_type
                         },

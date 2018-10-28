@@ -58,26 +58,22 @@
 //! directly into it.
 //!
 
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", warn(
-    option_unwrap_used, result_unwrap_used,
-    single_match_else
-))]
+#![feature(try_from)]
+#![warn(clippy::pedantic)]
 
 extern crate petgraph;
-extern crate spirv_headers;
 extern crate rspirv;
+extern crate spirv_headers;
 #[macro_use]
 extern crate error_chain;
 extern crate fnv;
 
-mod types;
-mod operations;
 mod builder;
 mod node;
+mod operations;
+mod types;
 
-pub mod module;
-pub mod graph;
 pub mod errors;
+pub mod graph;
+pub mod module;
 pub mod prelude;

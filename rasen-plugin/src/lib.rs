@@ -71,14 +71,14 @@
 
 #![recursion_limit="256"]
 #![feature(plugin_registrar, rustc_private, custom_attribute, box_syntax)]
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
+#![warn(clippy::pedantic)]
 
 extern crate rustc_plugin;
 extern crate syntax;
 #[macro_use] extern crate quote;
+extern crate proc_macro2;
 
-use syntax::codemap::Span;
+use syntax::source_map::Span;
 use syntax::symbol::Symbol;
 use syntax::ext::build::AstBuilder;
 use rustc_plugin::registry::Registry;
@@ -91,22 +91,24 @@ use syntax::ast::{
     FnDecl, FunctionRetTy, TyKind, PatKind, ExprKind,
 };
 use syntax::ext::base::{Annotatable, ExtCtxt, SyntaxExtension, MacResult, MacEager, TTMacroExpander};
+use syntax::source_map::edition::Edition;
 
-use quote::Ident;
+use proc_macro2::{Ident, Span as MacroSpan};
 
+#[allow(clippy::cast_possible_truncation)]
 fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Vec<Annotatable> {
     let tokens = if let Annotatable::Item(ref item) = item {
         let Item { ident, ref node, .. } = **item;
-        let fn_name = Ident::from(format!("{}", ident));
-        let aux_name = Ident::from(format!("{}_module", ident));
+        let fn_name = Ident::new(&format!("{}", ident), MacroSpan::call_site());
+        let aux_name = Ident::new(&format!("{}_module", ident), MacroSpan::call_site());
 
-        if let ItemKind::Fn(ref decl, _, _, _, _, _) = *node {
+        if let ItemKind::Fn(ref decl, ..) = *node {
             let FnDecl { ref inputs, ref output, .. } = **decl;
 
             let args: Vec<_> = {
                 inputs.iter()
                     .map(|arg| match arg.pat.node {
-                        PatKind::Ident(_, ident, _) => Ident::from(format!("{}", ident.node)),
+                        PatKind::Ident(_, ident, _) => Ident::new(&format!("{}", ident.name), MacroSpan::call_site()),
                         _ => panic!("unimplemented {:?}", arg.pat.node),
                     })
                     .collect()
@@ -130,7 +132,7 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
                         let list: Vec<_> = {
                             (0..fields.len())
                                 .map(|id| {
-                                    Ident::from(format!("out_{}", id))
+                                    Ident::new(&format!("out_{}", id), MacroSpan::call_site())
                                 })
                                 .collect()
                         };
@@ -139,7 +141,7 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
                         (quote! { ( #( #list ),* ) }, outputs)
                     },
                     TyKind::Path(_, _) => {
-                        let output = Ident::from("output");
+                        let output = Ident::new("output", MacroSpan::call_site());
                         (quote!{ #output }, vec![ output ])
                     },
                     _ => panic!("unimplemented {:?}", ty.node),
@@ -196,7 +198,7 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
 fn insert_function_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Vec<Annotatable> {
     if let Annotatable::Item(item) = item {
         let Item { ident, ref attrs, ref node, span, .. } = *item;
-        if let ItemKind::Fn(ref decl, unsafety, constness, abi, ref generics, ref block) = *node {
+        if let ItemKind::Fn(ref decl, header, ref generics, ref block) = *node {
             let FnDecl { ref inputs, ref output, .. } = **decl;
             return vec![
                 Annotatable::Item(ecx.item(
@@ -207,7 +209,7 @@ fn insert_function_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> 
                             inputs.clone(),
                             output.clone(),
                         ),
-                        unsafety, constness, abi,
+                        header,
                         generics.clone(),
                         ecx.block(block.span, vec![
                             ecx.stmt_let(
@@ -233,7 +235,7 @@ fn insert_function_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> 
                                 inputs.iter()
                                     .fold(None, |current, arg| match arg.pat.node {
                                         PatKind::Ident(_, ident, _) => Some({
-                                            let id = ecx.expr_ident(ident.span, ident.node);
+                                            let id = ecx.expr_ident(ident.span, ident);
                                             let module = ecx.expr_method_call(
                                                 ident.span, id,
                                                 ecx.ident_of("get_module"),
@@ -273,7 +275,7 @@ fn insert_function_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> 
                                         ecx.ident_of("func"),
                                         inputs.iter()
                                             .map(|arg| match arg.pat.node {
-                                                PatKind::Ident(_, ident, _) => ecx.expr_ident(ident.span, ident.node),
+                                                PatKind::Ident(_, ident, _) => ecx.expr_ident(ident.span, ident),
                                                 _ => ecx.span_fatal(arg.pat.span, "Unsupported destructuring"),
                                             })
                                             .collect(),
@@ -285,7 +287,7 @@ fn insert_function_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> 
                                         ecx.ident_of("func"),
                                         inputs.iter()
                                             .map(|arg| match arg.pat.node {
-                                                PatKind::Ident(_, ident, _) => ecx.expr_ident(ident.span, ident.node),
+                                                PatKind::Ident(_, ident, _) => ecx.expr_ident(ident.span, ident),
                                                 _ => ecx.span_fatal(arg.pat.span, "Unsupported destructuring"),
                                             })
                                             .collect(),
@@ -302,18 +304,23 @@ fn insert_function_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> 
     ecx.span_fatal(span, "Unsupported item for Rasen function attribute")
 }
 
-fn rasen_attribute(ecx: &mut ExtCtxt, span: Span, meta_item: &MetaItem, item: Annotatable) -> Vec<Annotatable> {
+fn rasen_attribute(ecx: &mut ExtCtxt, _: Span, meta_item: &MetaItem, item: Annotatable) -> Vec<Annotatable> {
     let res = match meta_item.node {
         MetaItemKind::List(ref list) if list.len() == 1 => {
             let first = &list[0];
             match first.node {
-                NestedMetaItemKind::MetaItem(ref meta) => {
-                    if meta.name == Symbol::from("module") {
-                        Ok(insert_module_wrapper(ecx, span, item))
-                    } else if meta.name == Symbol::from("function") {
-                        Ok(insert_function_wrapper(ecx, span, item))
+                NestedMetaItemKind::MetaItem(MetaItem { ref ident, node: MetaItemKind::Word, span }) => {
+                    if ident.segments.len() == 1 {
+                        let segment = &ident.segments[0];
+                        if segment.ident.name == Symbol::intern("module") {
+                            Ok(insert_module_wrapper(ecx, span, item))
+                        } else if segment.ident.name == Symbol::intern("function") {
+                            Ok(insert_function_wrapper(ecx, span, item))
+                        } else {
+                            Err(span)
+                        }
                     } else {
-                        Err(meta.span)
+                        Err(span)
                     }
                 },
                 _ => Err(first.span)
@@ -333,7 +340,7 @@ fn idx_macro<'cx>(ecx: &'cx mut ExtCtxt, span: Span, tt: &[TokenTree]) -> Box<Ma
         (&TokenTree::Token(_, Token::Ident(obj, _)), &TokenTree::Token(_, Token::Ident(index, _))) => {
             let index = index.to_string();
             if index.is_empty() {
-                ecx.span_fatal(span, &format!("Empty composite field"));
+                ecx.span_fatal(span, "Empty composite field");
             }
 
             let mut fields: Vec<_> = {
@@ -389,7 +396,7 @@ struct CompositeMacro<'a>{
 }
 
 impl<'a> TTMacroExpander for CompositeMacro<'a> {
-    fn expand<'cx>(&self, ecx: &'cx mut ExtCtxt, span: Span, ts: TokenStream) -> Box<MacResult + 'cx> {
+    fn expand<'cx>(&self, ecx: &'cx mut ExtCtxt, span: Span, ts: TokenStream, _: Option<Span>) -> Box<MacResult + 'cx> {
         let func = ast::Ident::from_str(self.func);
         let vec = ast::Ident::from_str("vec");
 
@@ -419,33 +426,28 @@ impl<'a> TTMacroExpander for CompositeMacro<'a> {
 
         block.extend(
             ts.trees()
-                .filter_map(|tt| match tt {
-                    TokenTree::Token(_, token) => match token {
-                        Token::Ident(id, _) => Some(
-                            ecx.expr_ident(span, id)
-                        ),
-                        Token::Literal(lit, _) => match lit {
-                            Lit::Integer(name) => {
-                                let val: u128 = format!("{}", name).parse().unwrap();
-                                Some(
+                .filter_map(|tt| {
+                    let expr = match tt {
+                        TokenTree::Token(_, token) => match token {
+                            Token::Ident(id, _) => ecx.expr_ident(span, id),
+                            Token::Literal(lit, _) => match lit {
+                                Lit::Integer(name) => {
+                                    let val: u128 = format!("{}", name).parse().unwrap();
                                     ecx.expr_lit(span, ast::LitKind::Int(
                                         val, self.int_ty.unwrap(),
                                     ))
-                                )
-                            },
-                            Lit::Float(name) => Some(
-                                ecx.expr_lit(span, ast::LitKind::Float(
+                                },
+                                Lit::Float(name) => ecx.expr_lit(span, ast::LitKind::Float(
                                     name, self.float_ty.unwrap(),
                                 )),
-                            ),
-                            _ => None,
+                                _ => return None,
+                            },
+                            _ => return None,
                         },
-                        _ => None,
-                    },
-                    _ => None,
-                })
-                .map(|expr| {
-                    ecx.stmt_expr(
+                        _ => return None,
+                    };
+
+                    Some(ecx.stmt_expr(
                         ecx.expr_method_call(
                             span,
                             ecx.expr_ident(span, vec),
@@ -463,7 +465,7 @@ impl<'a> TTMacroExpander for CompositeMacro<'a> {
                                 ),
                             ],
                         ),
-                    )
+                    ))
                 })
         );
 
@@ -572,6 +574,8 @@ pub fn plugin_registrar(reg: &mut Registry) {
                 allow_internal_unstable: false,
                 def_info: None,
                 unstable_feature: None,
+                local_inner_macros: false,
+                edition: Edition::Edition2018,
             },
         );
     }

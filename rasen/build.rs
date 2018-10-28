@@ -1,56 +1,48 @@
 #![recursion_limit = "128"]
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
+#![warn(clippy::pedantic)]
 
 #[macro_use]
 extern crate quote;
+extern crate proc_macro2;
 
-use std::env;
-use std::fs::File;
-use std::io::Write;
-use std::path::Path;
+use std::{collections::HashMap, env, fs::File, io::Write, path::Path, str::FromStr};
+
+use proc_macro2::{Ident, Span, TokenStream};
 
 static INTS: [(&'static str, &'static str, &'static str); 3] = [
     ("Bool", "b", "bool"),
     ("Int", "i", "i32"),
     ("UInt", "u", "u32"),
 ];
-static FLOATS: [(&'static str, &'static str, &'static str); 2] = [
-    ("Float", "", "f32"),
-    ("Double", "d", "f64"),
-];
+static FLOATS: [(&'static str, &'static str, &'static str); 2] =
+    [("Float", "", "f32"), ("Double", "d", "f64")];
 
-static SAMPLERS: [(&'static str, &'static str); 3] = [
-    ("", "FLOAT"),
-    ("I", "INT"),
-    ("U", "UINT"),
-];
-static DIMENSIONS: [&'static str; 6] = [
-    "1D",
-    "2D",
-    "3D",
-    "Cube",
-    "Rect",
-    "Buffer",
-];
+static SAMPLERS: [(&'static str, &'static str); 3] = [("", "FLOAT"), ("I", "INT"), ("U", "UINT")];
+static DIMENSIONS: [&'static str; 6] = ["1D", "2D", "3D", "Cube", "Rect", "Buffer"];
+
+enum ConstType {
+    Vec(u32, Ident),
+    Mat(u32, Ident),
+    Sampler(Ident, Ident),
+}
 
 fn types(out_dir: &str) {
-    let builder = quote::Ident::from("$builder");
-    let constant = quote::Ident::from("$constant");
+    let builder = TokenStream::from_str("$builder").unwrap();
+    let constant = TokenStream::from_str("$constant").unwrap();
 
-    let mut const_types = Vec::new();
+    let mut const_types = HashMap::new();
     let mut from_string_arms = Vec::new();
     let mut typed_variants = Vec::new();
     let mut type_name_arms = Vec::new();
     let mut register_constant_arms = Vec::new();
 
     for &(name, _, ty) in INTS.iter().chain(FLOATS.iter()) {
-        let const_name = quote::Ident::from(name.to_string().to_uppercase());
+        let const_name = Ident::new(&name.to_string().to_uppercase(), Span::call_site());
         let glsl_name = name.to_string().to_lowercase();
-        let name = quote::Ident::from(name);
+        let name = Ident::new(&name, Span::call_site());
 
         from_string_arms.push(quote! {
-            #glsl_name => TypeName::#const_name,
+            #glsl_name => Self::#const_name,
         });
 
         type_name_arms.push(quote! {
@@ -87,6 +79,7 @@ fn types(out_dir: &str) {
                         Some(res_type),
                         Some(res_id),
                         vec![
+                            #[allow(clippy::cast_sign_loss)]
                             Operand::LiteralInt32(val as u32),
                         ]
                     )
@@ -118,7 +111,7 @@ fn types(out_dir: &str) {
                 );
             },
 
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         register_constant_arms.push(quote! {
@@ -130,7 +123,7 @@ fn types(out_dir: &str) {
             },
         });
 
-        let ty = quote::Ident::from(ty);
+        let ty = Ident::new(&ty, Span::call_site());
         typed_variants.push(quote! {
             #name(#ty)
         });
@@ -139,22 +132,22 @@ fn types(out_dir: &str) {
     for size in 2u32..5u32 {
         for &(name, prefix, ty) in INTS.iter().chain(FLOATS.iter()) {
             let type_variant = format!("{}Vec{}", prefix.to_string().to_uppercase(), size);
-            let const_name = quote::Ident::from(type_variant.to_uppercase());
+            let const_name = Ident::new(&type_variant.to_uppercase(), Span::call_site());
             let glsl_name = type_variant.to_lowercase();
-            let type_variant = quote::Ident::from(type_variant);
+            let type_variant = Ident::new(&type_variant, Span::call_site());
 
-            let const_ty = quote::Ident::from(name.to_string().to_uppercase());
-            let name = quote::Ident::from(name);
+            let const_ty = Ident::new(&name.to_string().to_uppercase(), Span::call_site());
+            let name = Ident::new(&name, Span::call_site());
 
-            const_types.push(quote! {
-                pub const #const_name: &'static TypeName = &TypeName::Vec(#size, TypeName::#const_ty);
-            });
+            const_types.insert(const_name.clone(), ConstType::Vec(size, const_ty));
 
             from_string_arms.push(quote! {
-                #glsl_name => TypeName::#const_name,
+                #glsl_name => Self::#const_name,
             });
 
-            let tuple_fields: Vec<_> = (0..size).map(|_| quote::Ident::from(ty)).collect();
+            let tuple_fields: Vec<_> = (0..size)
+                .map(|_| Ident::new(&ty, Span::call_site()))
+                .collect();
             typed_variants.push(quote! {
                 #type_variant( #( #tuple_fields ),* )
             });
@@ -163,15 +156,22 @@ fn types(out_dir: &str) {
                 TypedValue::#type_variant(..) => TypeName::#const_name
             });
 
-            let fields: Vec<_> = (0..size).map(|i| quote::Ident::from(format!("f{}", i))).collect();
-            let field_ids: Vec<_> = (0..size).map(|i| quote::Ident::from(format!("f{}_id", i))).collect();
+            let fields: Vec<_> = (0..size)
+                .map(|i| Ident::new(&format!("f{}", i), Span::call_site()))
+                .collect();
+            let field_ids: Vec<_> = (0..size)
+                .map(|i| Ident::new(&format!("f{}_id", i), Span::call_site()))
+                .collect();
 
-            let register_fields: Vec<_> =
-                field_ids.iter().zip(fields.iter())
-                    .map(|(id, field)| quote! {
+            let register_fields: Vec<_> = field_ids
+                .iter()
+                .zip(fields.iter())
+                .map(|(id, field)| {
+                    quote! {
                         let #id = #builder.register_constant(&TypedValue::#name(#field))?;
-                    })
-                    .collect();
+                    }
+                })
+                .collect();
 
             register_constant_arms.push(quote! {
                 TypedValue::#type_variant(#( #fields ),*) => {
@@ -197,20 +197,21 @@ fn types(out_dir: &str) {
         }
 
         for &(_, prefix, ty) in &FLOATS {
-            let ty = quote::Ident::from(ty);
-            let const_ty = quote::Ident::from(format!("{}VEC{}", prefix.to_string().to_uppercase(), size));
+            let ty = Ident::new(&ty, Span::call_site());
+            let const_ty = Ident::new(
+                &format!("{}VEC{}", prefix.to_string().to_uppercase(), size),
+                Span::call_site(),
+            );
 
             let type_variant = format!("{}Mat{}", prefix.to_string().to_uppercase(), size);
-            let const_ident = quote::Ident::from(type_variant.to_uppercase());
+            let const_ident = Ident::new(&type_variant.to_uppercase(), Span::call_site());
             let glsl_type = type_variant.to_lowercase();
-            let type_variant = quote::Ident::from(type_variant);
+            let type_variant = Ident::new(&type_variant, Span::call_site());
 
-            const_types.push(quote! {
-                pub const #const_ident: &'static TypeName = &TypeName::Mat(#size, TypeName::#const_ty);
-            });
+            const_types.insert(const_ident.clone(), ConstType::Mat(size, const_ty));
 
             from_string_arms.push(quote! {
-                #glsl_type => TypeName::#const_ident,
+                #glsl_type => Self::#const_ident,
             });
 
             let arr_size = (size * size) as usize;
@@ -231,27 +232,121 @@ fn types(out_dir: &str) {
             dim.to_string().to_uppercase()
         };
 
-        let dim = quote::Ident::from(format!("Dim{}", dim));
+        let dim = Ident::new(&format!("Dim{}", dim), Span::call_site());
         for &(prefix, ty) in &SAMPLERS {
-            let name = quote::Ident::from(format!("{}SAMPLER{}", prefix, dim_upper));
-            let ty = quote::Ident::from(ty);
+            let ty = Ident::new(&ty, Span::call_site());
+            let name = Ident::new(
+                &format!("{}SAMPLER{}", prefix, dim_upper),
+                Span::call_site(),
+            );
 
-            const_types.push(quote! {
-                pub const #name: &'static TypeName = &TypeName::Sampler(TypeName::#ty, Dim::#dim);
-            });
+            const_types.insert(name, ConstType::Sampler(ty, dim.clone()));
         }
     }
 
+    let ptr_arms: Vec<_> = {
+        const_types
+            .keys()
+            .filter_map(|name| {
+                use proc_macro2::{Ident, TokenStream};
+
+                fn as_pattern(
+                    const_types: &HashMap<Ident, ConstType>,
+                    name: &Ident,
+                ) -> Result<TokenStream, ()> {
+                    let ty = if let Some(ty) = const_types.get(name) {
+                        ty
+                    } else {
+                        let name = name.to_string();
+                        return Ok(match &name as &str {
+                            "BOOL" => quote! { TypeName::Bool },
+                            "INT" => quote! { TypeName::Int(true) },
+                            "UINT" => quote! { TypeName::Int(false) },
+                            "FLOAT" => quote! { TypeName::Float(false) },
+                            "DOUBLE" => quote! { TypeName::Float(true) },
+
+                            other => panic!("{:?}", other),
+                        });
+                    };
+
+                    Ok(match *ty {
+                        ConstType::Vec(size, ref const_ty) => {
+                            let const_ty = as_pattern(const_types, const_ty)?;
+                            quote! {
+                                TypeName::Vec(#size, & #const_ty)
+                            }
+                        }
+                        ConstType::Mat(size, ref const_ty) => {
+                            let const_ty = as_pattern(const_types, const_ty)?;
+                            quote! {
+                                TypeName::Mat(#size, & #const_ty)
+                            }
+                        }
+                        ConstType::Sampler(ref ty, ref dim) => {
+                            let ty = as_pattern(const_types, ty)?;
+                            let dim = dim.clone();
+                            quote! {
+                                TypeName::Sampler(& #ty, Dim::#dim)
+                            }
+                        }
+                    })
+                }
+
+                as_pattern(&const_types, name).ok().map(|pattern| {
+                    let ptr_name = Ident::new(&format!("{}_PTR", name), Span::call_site());
+                    quote! {
+                        #pattern => Self::#ptr_name,
+                    }
+                })
+            })
+            .collect()
+    };
+
+    let const_types: Vec<_> = {
+        const_types
+            .into_iter()
+            .map(|(name, ty)| {
+                let value = match ty {
+                    ConstType::Vec(size, const_ty) => quote! {
+                        TypeName::Vec(#size, Self::#const_ty)
+                    },
+                    ConstType::Mat(size, const_ty) => quote! {
+                        TypeName::Mat(#size, Self::#const_ty)
+                    },
+                    ConstType::Sampler(ty, dim) => quote! {
+                        TypeName::Sampler(Self::#ty, Dim::#dim)
+                    },
+                };
+
+                let ptr_name = Ident::new(&format!("{}_PTR", name), Span::call_site());
+                quote! {
+                    pub const #name: &'static Self = & #value;
+                    const #ptr_name: &'static Self = &TypeName::_Pointer(Self::#name);
+                }
+            })
+            .collect()
+    };
+
     let type_name_impl = quote! {
+        #[allow(clippy::unseparated_literal_suffix)]
         impl TypeName {
             #( #const_types )*
 
             #[inline]
-            pub fn from_string(ty: &str) -> Option<&'static TypeName> {
+            pub fn from_string(ty: &str) -> Option<&'static Self> {
                 Some(match ty {
                     #( #from_string_arms )*
                     _ => return None
                 })
+            }
+
+            #[inline]
+            pub(crate) fn as_ptr(&'static self) -> &'static Self {
+                match *self {
+                    TypeName::Float(false) => Self::FLOAT_PTR,
+                    #( #ptr_arms )*
+                    ref other => panic!("Missing as_ptr implementation: {:?}", other),
+                }
             }
         }
     };
@@ -259,6 +354,7 @@ fn types(out_dir: &str) {
     let typed_value = quote! {
         /// Holder for a GLSL value and a type
         #[derive(Debug)]
+        #[allow(clippy::unseparated_literal_suffix)]
         pub enum TypedValue {
             #( #typed_variants ),*
         }
@@ -278,9 +374,12 @@ fn types(out_dir: &str) {
     let path_types = Path::new(out_dir).join("types.rs");
     let mut f_types = File::create(&path_types).unwrap();
 
-    write!(f_types, "{}\n{}\n{}",
+    write!(
+        f_types,
+        "{}\n{}\n{}",
         type_name_impl, typed_value, typed_value_impl
-    ).unwrap();
+    )
+    .unwrap();
 
     let register_constant = quote! {
         match *#constant {
@@ -298,111 +397,162 @@ fn types(out_dir: &str) {
     ).unwrap();
 }
 
-const NODES: [(&'static str, &'static str, &'static str); 24] = [(
-    "Normalize",
-    "Normalize a vector",
-    "Takes a single parameter"
-), (
-    "Add",
-    "Add some values",
-    "This node takes at least 2 parameters (left-associative)"
-), (
-    "Subtract",
-    "Subtract a value from another",
-    "This node takes at least 2 parameters (left-associative)"
-), (
-    "Multiply",
-    "Multiply some values",
-    "This node takes at least 2 parameters (left-associative)"
-), (
-    "Divide",
-    "Divide a value by another",
-    "This node takes at least 2 parameters (left-associative)"
-), (
-    "Modulus",
-    "Compute the modulus of a value by another",
-    "Takes 2 parameters"
-), (
-    "Clamp",
-    "Clamp a value in a range",
-    "Takes 3 parameters: the value to be clamped, the minimum, and the maximum"
-), (
-    "Dot",
-    "Compute the dot product of 2 vectors",
-    "Takes 2 parameters"
-), (
-    "Cross",
-    "Compute the cross product of 2 vectors",
-    "Takes 2 parameters"
-), (
-    "Floor",
-    "Round a number to the largest lower or equal integer",
-    "Takes a single parameter"
-), (
-    "Ceil",
-    "Round a number to the nearest integer",
-    "Takes a single parameter"
-), (
-    "Round",
-    "Round a number to the smallest higher or equal integer",
-    "Takes a single parameter"
-), (
-    "Sin",
-    "Compute the sinus of an angle in radians",
-    "Takes a single parameter"
-), (
-    "Cos",
-    "Compute the cosinus of an angle in radians",
-    "Takes a single parameter"
-), (
-    "Tan",
-    "Compute the tangent of an angle in radians",
-    "Takes a single parameter"
-), (
-    "Pow",
-    "Raise a number to a power",
-    "Takes 2 parameters"
-), (
-    "Min",
-    "Returns the smallest value of all its arguments",
-    "This node takes at least 2 parameters"
-), (
-    "Max",
-    "Return the greatest value of all its arguments",
-    "This node takes at least 2 parameters"
-), (
-    "Length",
-    "Computes the length of a vector",
-    "Takes a single parameter"
-), (
-    "Distance",
-    "Computes the distance between 2 points",
-    "Takes 2 parameters"
-), (
-    "Reflect",
-    "Reflect a vector against a surface normal",
-    "Takes 2 parameters"
-), (
-    "Refract",
-    "Computes the refraction of a vector using a surface normal and a refraction indice",
-    "Takes 3 parameters"
-), (
-    "Mix",
-    "Computes a linear interpolation between two values",
-    "Takes 3 parameters"
-), (
-    "Sample",
-    "Samples a texture using a coordinates vector",
-    "Takes 2 or 3 parameters: the texture sampler, the coordinates, and an optional LOD bias"
-)];
+const NODES: &'static [(&'static str, &'static str, &'static str)] = &[
+    (
+        "Normalize",
+        "Normalize a vector",
+        "Takes a single parameter",
+    ),
+    (
+        "Add",
+        "Add some values",
+        "This node takes at least 2 parameters (left-associative)",
+    ),
+    (
+        "Subtract",
+        "Subtract a value from another",
+        "This node takes at least 2 parameters (left-associative)",
+    ),
+    (
+        "Multiply",
+        "Multiply some values",
+        "This node takes at least 2 parameters (left-associative)",
+    ),
+    (
+        "Divide",
+        "Divide a value by another",
+        "This node takes at least 2 parameters (left-associative)",
+    ),
+    (
+        "Modulus",
+        "Compute the modulus of a value by another",
+        "Takes 2 parameters",
+    ),
+    (
+        "Clamp",
+        "Clamp a value in a range",
+        "Takes 3 parameters: the value to be clamped, the minimum, and the maximum",
+    ),
+    (
+        "Dot",
+        "Compute the dot product of 2 vectors",
+        "Takes 2 parameters",
+    ),
+    (
+        "Cross",
+        "Compute the cross product of 2 vectors",
+        "Takes 2 parameters",
+    ),
+    (
+        "Floor",
+        "Round a number to the largest lower or equal integer",
+        "Takes a single parameter",
+    ),
+    (
+        "Ceil",
+        "Round a number to the nearest integer",
+        "Takes a single parameter",
+    ),
+    (
+        "Round",
+        "Round a number to the smallest higher or equal integer",
+        "Takes a single parameter",
+    ),
+    (
+        "Sin",
+        "Compute the sinus of an angle in radians",
+        "Takes a single parameter",
+    ),
+    (
+        "Cos",
+        "Compute the cosinus of an angle in radians",
+        "Takes a single parameter",
+    ),
+    (
+        "Tan",
+        "Compute the tangent of an angle in radians",
+        "Takes a single parameter",
+    ),
+    ("Pow", "Raise a number to a power", "Takes 2 parameters"),
+    (
+        "Min",
+        "Returns the smallest value of all its arguments",
+        "This node takes at least 2 parameters",
+    ),
+    (
+        "Max",
+        "Return the greatest value of all its arguments",
+        "This node takes at least 2 parameters",
+    ),
+    (
+        "Length",
+        "Computes the length of a vector",
+        "Takes a single parameter",
+    ),
+    (
+        "Distance",
+        "Computes the distance between 2 points",
+        "Takes 2 parameters",
+    ),
+    (
+        "Reflect",
+        "Reflect a vector against a surface normal",
+        "Takes 2 parameters",
+    ),
+    (
+        "Refract",
+        "Computes the refraction of a vector using a surface normal and a refraction indice",
+        "Takes 3 parameters",
+    ),
+    (
+        "Mix",
+        "Computes a linear interpolation between two values",
+        "Takes 3 parameters",
+    ),
+    (
+        "Sample",
+        "Samples a texture using a coordinates vector",
+        "Takes 2 or 3 parameters: the texture sampler, the coordinates, and an optional LOD bias",
+    ),
+    (
+        "Sqrt",
+        "Compute the square root of a value",
+        "Takes one parameter",
+    ),
+    (
+        "Log",
+        "Compute the natural logarithm of a value",
+        "Takes one parameter",
+    ),
+    (
+        "Abs",
+        "Compute the absolute value of a float",
+        "Takes one parameter",
+    ),
+    (
+        "Smoothstep",
+        "Perform Hermite interpolation between two values",
+        "Takes three parameter",
+    ),
+    (
+        "Inverse",
+        "Calculate the inverse of a matrix",
+        "Takes one parameter",
+    ),
+    (
+        "Step",
+        "Generate a step function by comparing two values",
+        "Takes two parameter",
+    ),
+];
 
 fn nodes(out_dir: &str) {
     let mut node_variants = Vec::new();
     let mut to_string_arms = Vec::new();
     let mut from_string_arms = Vec::new();
 
-    for &(name, desc, params) in &NODES {
-        let ident = quote::Ident::from(name.to_string());
+    for &(name, desc, params) in NODES {
+        let ident = Ident::new(&name.to_string(), Span::call_site());
         node_variants.push(quote! {
             #[doc = #desc]
             #[doc = ""]

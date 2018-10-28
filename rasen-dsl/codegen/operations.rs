@@ -1,19 +1,27 @@
 //! GLSL Operation declarations
 
-use quote::{Ident, Tokens};
+use proc_macro2::{Ident, Span, TokenStream};
 
-fn operation(name: &str, args: u32, adnl_generics: &[Ident], constraints: &Tokens, implementation: &Tokens) -> Tokens {
-    let node = Ident::from(name);
-    let fn_name = Ident::from(name.to_lowercase());
+fn operation(
+    name: &str,
+    args: u32,
+    adnl_generics: &[Ident],
+    constraints: &TokenStream,
+    implementation: &TokenStream,
+) -> TokenStream {
+    let node = Ident::new(&name, Span::call_site());
+    let fn_name = Ident::new(&name.to_lowercase(), Span::call_site());
     let indices: Vec<u32> = (0..args).collect();
     let mut generics: Vec<_> = {
-        indices.iter()
-            .map(|i| Ident::from(format!("T{}", i)))
+        indices
+            .iter()
+            .map(|i| Ident::new(&format!("T{}", i), Span::call_site()))
             .collect()
     };
     let args: Vec<Ident> = {
-        indices.iter()
-            .map(|i| Ident::from(format!("arg_{}", i)))
+        indices
+            .iter()
+            .map(|i| Ident::new(&format!("arg_{}", i), Span::call_site()))
             .collect()
     };
     let arg_list: Vec<_> = {
@@ -22,7 +30,7 @@ fn operation(name: &str, args: u32, adnl_generics: &[Ident], constraints: &Token
             .map(|(arg, ty)| quote! { #arg: #ty })
             .collect()
     };
-    
+
     let args2 = args.clone();
 
     for gen in adnl_generics {
@@ -47,7 +55,7 @@ fn operation(name: &str, args: u32, adnl_generics: &[Ident], constraints: &Token
     }
 }
 
-pub fn match_values(names: &[Ident], concrete: &Tokens, index: Tokens) -> Tokens {
+pub fn match_values(names: &[Ident], concrete: &TokenStream, index: TokenStream) -> TokenStream {
     let parts = names.len();
     let arms: Vec<_> = {
         (0..2u32.pow(parts as u32))
@@ -87,7 +95,7 @@ pub fn match_values(names: &[Ident], concrete: &Tokens, index: Tokens) -> Tokens
                             .unzip()
                     };
 
-                    let ident1: Vec<_> = (0..indices.len()).map(|i| Ident::from(format!("tmp_{}", i))).collect();
+                    let ident1: Vec<_> = (0..indices.len()).map(|i| Ident::new(&format!("tmp_{}", i), Span::call_site())).collect();
                     let ident2 = ident1.clone();
 
                     quote! {
@@ -121,10 +129,10 @@ pub fn match_values(names: &[Ident], concrete: &Tokens, index: Tokens) -> Tokens
     }
 }
 
-pub fn impl_operations() -> Vec<Tokens> {
-    let operations: &[(&str, u32, &[Ident], Tokens, Tokens)] = &[
+pub fn impl_operations() -> Vec<TokenStream> {
+    let operations: &[(&str, u32, &[Ident], TokenStream, TokenStream)] = &[
         (
-            "Normalize", 1, &[ Ident::from("S") ],
+            "Normalize", 1, &[ Ident::new("S", Span::call_site()) ],
             quote! { where T0: IntoValue<Output=R>, R: Vector<S>, S: Floating },
             quote! {
                 let count = R::component_count();
@@ -137,7 +145,7 @@ pub fn impl_operations() -> Vec<Tokens> {
                 vec.into()
             }
         ), (
-            "Dot", 2, &[ Ident::from("V") ],
+            "Dot", 2, &[ Ident::new("V", Span::call_site()) ],
             quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R>, R: Numerical },
             quote! {
                 let count = V::component_count();
@@ -154,7 +162,7 @@ pub fn impl_operations() -> Vec<Tokens> {
                 min(max(x, min_val), max_val)
             }
         ), (
-            "Cross", 2, &[ Ident::from("S") ],
+            "Cross", 2, &[ Ident::new("S", Span::call_site()) ],
             quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S>, S: Numerical },
             quote! {
                 let vec: R = vec![
@@ -219,7 +227,7 @@ pub fn impl_operations() -> Vec<Tokens> {
                 (if arg_1 > arg_0 { arg_1 } else { arg_0 }).into()
             }
         ), (
-            "Length", 1, &[ Ident::from("V") ],
+            "Length", 1, &[ Ident::new("V", Span::call_site()) ],
             quote! { where T0: IntoValue<Output=V>, V: Vector<R>, R: Floating },
             quote! {
                 let count = V::component_count();
@@ -232,13 +240,13 @@ pub fn impl_operations() -> Vec<Tokens> {
                 length.sqrt().into()
             }
         ), (
-            "Distance", 2, &[ Ident::from("V") ],
+            "Distance", 2, &[ Ident::new("V", Span::call_site()) ],
             quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R> + Sub<V, Output=V>, R: Floating },
             quote! {
                 length(arg_0 - arg_1)
             }
         ), (
-            "Reflect", 2, &[ Ident::from("S") ],
+            "Reflect", 2, &[ Ident::new("S", Span::call_site()) ],
             quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S> + Sub<R, Output=R>, S: Numerical + Mul<R, Output=R> },
             quote! {
                 let res: S = match dot(arg_1, arg_0) {
@@ -250,18 +258,18 @@ pub fn impl_operations() -> Vec<Tokens> {
                 res.into()
             }
         ), (
-            "Refract", 3, &[ Ident::from("S") ],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=S>, R: Vector<S> + Sub<R, Output=R>, S: Floating + Mul<R, Output=R> },
+            "Refract", 3, &[ Ident::new("S", Span::call_site()) ],
+            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=S>, R: Math + Vector<S> + Sub<R, Output=R>, S: Floating + Mul<R, Output=R> },
             quote! {
-                let one: S = Scalar::one();
+                let one: S = S::one();
                 let dot: S = match dot(arg_1, arg_0) {
                     Value::Concrete(v) => v,
                     _ => unreachable!(),
                 };
                 let k: S = one - arg_2 * arg_2 * (one - dot * dot);
 
-                let res: R = if k < Scalar::zero() {
-                    Vector::zero()
+                let res: R = if k < S::zero() {
+                    R::zero()
                 } else {
                     let lhs = arg_2 * arg_0;
                     let rhs = (arg_2 * dot + k.sqrt()) * arg_1;
@@ -271,17 +279,86 @@ pub fn impl_operations() -> Vec<Tokens> {
                 res.into()
             }
         ), (
-            "Mix", 3, &[ Ident::from("V0"), Ident::from("V1"), Ident::from("V2"), Ident::from("V3"), Ident::from("V4") ],
-            quote! { where T0: IntoValue<Output=V0>, T1: IntoValue<Output=V1>, T2: IntoValue<Output=V2>, V0: IntoValue + Copy + Add<V4, Output=R>, V1: IntoValue + Clone + Sub<V0, Output=V3>, V2: IntoValue + Clone + Mul<V3, Output=V4>, R: Into<Value<R>> },
+            "Mix", 3, &[ Ident::new("V0", Span::call_site()) ],
+            quote!{
+                where T0: IntoValue<Output=V0>,
+                    T1: IntoValue<Output=V0>,
+                    T2: IntoValue<Output=V0>,
+                    V0: Math + Into<Value<R>> + Clone,
+                    Value<V0>: IntoValue
+            },
             quote! {
-                (arg_0 + arg_2 * (arg_1 - arg_0)).into()
+                let a: V0 = V0::one() - arg_2.clone();
+                let b: V0 = arg_0 * a;
+                let c: V0 = arg_1 * arg_2;
+                let d: V0 = b + c;
+                let r: Value<R> = d.into();
+                r
             }
-        )
+        ), (
+            "Sqrt", 1, &[],
+            quote! { where T0: IntoValue<Output=R>, R: Floating },
+            quote! {
+                arg_0.sqrt().into()
+            }
+        ), (
+            "Log", 1, &[],
+            quote! { where T0: IntoValue<Output=R>, R: Floating },
+            quote! {
+                arg_0.ln().into()
+            }
+        ), (
+            "Abs", 1, &[],
+            quote! { where T0: IntoValue<Output=R>, R: Floating },
+            quote! {
+                arg_0.abs().into()
+            }
+        ), (
+            "Smoothstep", 3, &[],
+            quote! {
+                where T0: IntoValue<Output=R>,
+                    T1: IntoValue<Output=R>,
+                    T2: IntoValue<Output=R>,
+                    R: Floating + Mul<Value<R>, Output=Value<R>> + Sub<Value<R>, Output=Value<R>>,
+                    Value<R>: Mul</*Value<R>,*/ Output=Value<R>> + Clone
+            },
+            quote! {
+                let t: Value<R> = clamp(
+                    (arg_2 - arg_0) / (arg_1 - arg_0),
+                    R::zero(), R::one(),
+                );
+
+                let a: Value<R> = t.clone() * t.clone();
+                let b: Value<R> = R::two() * t;
+                let c: Value<R> = R::three() - b;
+
+                a * c
+            }
+        ), (
+            "Inverse", 1, &[ Ident::new("V", Span::call_site()), Ident::new("S", Span::call_site()) ],
+            quote! { where T0: IntoValue<Output=R>, R: Matrix<V, S>, V: Vector<S>, S: Scalar },
+            quote! {
+                unimplemented!()
+            }
+        ),  (
+            "Step", 2, &[],
+            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar },
+            quote! {
+                if arg_1 < arg_0 {
+                    R::zero().into()
+                } else {
+                    R::one().into()
+                }
+            }
+        ),
     ];
 
-    operations.into_iter()
-        .map(|&(name, args, generics, ref constraints, ref implementation)| {
-            operation(name, args, generics, constraints, implementation)
-        })
+    operations
+        .into_iter()
+        .map(
+            |&(name, args, generics, ref constraints, ref implementation)| {
+                operation(name, args, generics, constraints, implementation)
+            },
+        )
         .collect()
 }

@@ -19,9 +19,10 @@
 //! # }
 //! ```
 
-#![cfg_attr(feature="functions", feature(fn_traits, unboxed_closures))]
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
+#![feature(try_from)]
+#![cfg_attr(feature = "functions", feature(fn_traits, unboxed_closures))]
+#![warn(clippy::pedantic)]
+#![allow(clippy::unseparated_literal_suffix)]
 
 extern crate rasen;
 

@@ -1,26 +1,32 @@
-use std::{mem, iter};
 use std::convert::TryFrom;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{iter, mem};
 
-use petgraph::graph::{NodeIndex, Graph as PetGraph};
-use petgraph::algo::toposort;
 use fnv::FnvHashMap as HashMap;
+use petgraph::algo::toposort;
+use petgraph::graph::{Graph as PetGraph, NodeIndex};
 
+use rspirv::binary::{Assemble, Disassemble};
+use rspirv::mr::{BasicBlock, Function, Instruction, Module, ModuleHeader, Operand};
 use spirv_headers::ExecutionModel as ShaderType;
 use spirv_headers::*;
-use rspirv::binary::{Assemble, Disassemble};
-use rspirv::mr::{
-    Module, ModuleHeader, BasicBlock,
-    Instruction, Function, Operand
-};
 
-use graph::*;
+use super::function::Builder as FunctionBuilder;
+use super::Builder as BuilderTrait;
 use errors::*;
+use graph::*;
 use module::{FunctionRef, Module as RasenModule};
-use types::{TypeName, TypedValue};
 use node::VariableName;
-use super::Builder;
-use super::function::*;
+use types::{TypeName, TypedValue};
+
+/// Global code generation settings
+#[derive(Clone, Debug)]
+pub struct Settings {
+    /// The type of the shader module being built
+    pub mod_type: ShaderType,
+    /// The name of the uniforms block struct
+    pub uniforms_name: Option<String>,
+}
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 enum CachedConstant {
@@ -33,6 +39,7 @@ enum CachedConstant {
 
 impl CachedConstant {
     #[inline]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn from_f64(val: f64) -> Self {
         let bits: u64 = unsafe { mem::transmute(val) };
         let sign = bits >> 63 == 0;
@@ -48,6 +55,7 @@ impl CachedConstant {
     }
 
     #[inline]
+    #[allow(clippy::cast_possible_truncation)]
     fn from_f32(f: f32) -> Self {
         let bits: u32 = unsafe { mem::transmute(f) };
         let sign = bits >> 31 == 0;
@@ -95,26 +103,32 @@ fn sort_instructions(unsorted: &[Instruction]) -> Result<Vec<Instruction>> {
 
     match toposort(&decl_graph, None) {
         Err(_) => bail!(ErrorKind::CyclicGraph),
-        Ok(indices) => Ok(
-            indices.into_iter()
-                .map(|i| {
-                    let inst = decl_graph[i];
-                    Instruction {
-                        class: inst.class,
-                        result_type: inst.result_type,
-                        result_id: inst.result_id,
-                        operands: inst.operands.clone(),
-                    }
-                })
-                .collect()
-        ),
+        Ok(indices) => Ok(indices
+            .into_iter()
+            .map(|i| {
+                let inst = decl_graph[i];
+                Instruction {
+                    class: inst.class,
+                    result_type: inst.result_type,
+                    result_id: inst.result_id,
+                    operands: inst.operands.clone(),
+                }
+            })
+            .collect()),
     }
 }
 
+pub type FunctionData = (
+    Word,
+    Vec<&'static TypeName>,
+    Option<&'static TypeName>,
+    Function,
+);
+
 /// Builder struct used to define a SPIR-V module
 #[derive(Debug)]
-pub struct ModuleBuilder {
-    mod_type: ShaderType,
+pub struct Builder {
+    settings: Settings,
     counter: AtomicUsize,
 
     inputs: Vec<Word>,
@@ -124,7 +138,7 @@ pub struct ModuleBuilder {
 
     pub(crate) module: Module,
     instructions: Vec<Instruction>,
-    pub(crate) functions: Vec<(Word, Vec<&'static TypeName>, Option<&'static TypeName>, Function)>,
+    pub(crate) functions: Vec<FunctionData>,
 
     uniform: Option<(Word, Word)>,
     uniforms: HashMap<Word, (Word, &'static TypeName)>,
@@ -141,94 +155,84 @@ const ENTRY_ID: Word = 4;
 
 include!(concat!(env!("OUT_DIR"), "/builder.rs"));
 
-impl ModuleBuilder {
+impl Builder {
     /// Create a new shader builder with some predefined base values
-    pub fn new(mod_type: ShaderType) -> ModuleBuilder {
-        ModuleBuilder {
-            mod_type: mod_type,
+    pub fn new(settings: Settings) -> Self {
+        let execution_modes = match settings.mod_type {
+            ShaderType::Fragment => vec![Instruction::new(
+                Op::ExecutionMode,
+                None,
+                None,
+                vec![
+                    Operand::IdRef(ENTRY_ID),
+                    Operand::ExecutionMode(ExecutionMode::OriginUpperLeft),
+                ],
+            )],
+
+            _ => Vec::new(),
+        };
+
+        Self {
+            settings,
             counter: AtomicUsize::new(5),
 
-            inputs: Default::default(),
-            outputs: Default::default(),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
 
-            imports: Default::default(),
+            imports: HashMap::default(),
 
             module: Module {
-                capabilities: vec![
-                    Instruction::new(
-                        Op::Capability,
-                        None, None,
-                        vec![
-                            Operand::Capability(Capability::Shader),
-                        ]
-                    ),
-                ],
+                capabilities: vec![Instruction::new(
+                    Op::Capability,
+                    None,
+                    None,
+                    vec![Operand::Capability(Capability::Shader)],
+                )],
 
-                memory_model: Some(
-                    Instruction::new(
-                        Op::MemoryModel,
-                        None, None,
-                        vec![
-                            Operand::AddressingModel(AddressingModel::Logical),
-                            Operand::MemoryModel(MemoryModel::GLSL450)
-                        ]
-                    )
-                ),
-
-                execution_modes: match mod_type {
-                    ShaderType::Fragment => vec![
-                        Instruction::new(
-                            Op::ExecutionMode,
-                            None, None,
-                            vec![
-                                Operand::IdRef(ENTRY_ID),
-                                Operand::ExecutionMode(ExecutionMode::OriginUpperLeft),
-                            ],
-                        ),
+                memory_model: Some(Instruction::new(
+                    Op::MemoryModel,
+                    None,
+                    None,
+                    vec![
+                        Operand::AddressingModel(AddressingModel::Logical),
+                        Operand::MemoryModel(MemoryModel::GLSL450),
                     ],
+                )),
 
-                    _ => Vec::new(),
-                },
+                execution_modes,
 
                 types_global_values: vec![
-                    Instruction::new(
-                        Op::TypeVoid,
-                        None,
-                        Some(VOID_ID),
-                        Vec::new()
-                    ),
+                    Instruction::new(Op::TypeVoid, None, Some(VOID_ID), Vec::new()),
                     Instruction::new(
                         Op::TypeFunction,
                         None,
                         Some(FUNC_ID),
-                        vec![
-                            Operand::IdRef(VOID_ID),
-                        ]
-                    )
+                        vec![Operand::IdRef(VOID_ID)],
+                    ),
                 ],
 
-                .. Module::new()
+                ..Module::new()
             },
 
             instructions: Vec::new(),
             functions: Vec::new(),
 
             uniform: None,
-            uniforms: Default::default(),
+            uniforms: HashMap::default(),
 
-            types: Default::default(),
-            constants: Default::default(),
-            results: Default::default(),
+            types: HashMap::default(),
+            constants: HashMap::default(),
+            results: HashMap::default(),
         }
     }
 
-    /// Create a new ModuleBuilder and add instructions to it based on a Graph
-    pub fn from_graph(graph: &Graph, mod_type: ShaderType) -> Result<ModuleBuilder> {
+    /// Create a new Builder and add instructions to it based on a Graph
+    pub fn from_graph(graph: &Graph, settings: Settings) -> Result<Self> {
         if graph.has_cycle() {
             bail!(ErrorKind::CyclicGraph);
         }
 
-        let mut program = ModuleBuilder::new(mod_type);
+        let mut program = Self::new(settings);
         for node in graph.outputs() {
             program.visit(graph, node)?;
         }
@@ -236,13 +240,13 @@ impl ModuleBuilder {
         Ok(program)
     }
 
-    /// Create a new ModuleBuilder and add instructions to it based on a Module
-    pub fn from_module(module: &RasenModule, mod_type: ShaderType) -> Result<ModuleBuilder> {
+    /// Create a new Builder and add instructions to it based on a Module
+    pub fn from_module(module: &RasenModule, settings: Settings) -> Result<Self> {
         if module.main.has_cycle() {
             bail!(ErrorKind::CyclicGraph);
         }
 
-        let mut program = ModuleBuilder::new(mod_type);
+        let mut program = Self::new(settings);
         for function in &module.functions {
             let mut proxy = FunctionBuilder::new(&mut program);
 
@@ -266,44 +270,39 @@ impl ModuleBuilder {
         }
 
         let ty_id = self.get_id();
-        self.module.annotations.push(
-            Instruction::new(
-                Op::Decorate,
-                None,
-                None,
-                vec![
-                    Operand::IdRef(ty_id),
-                    Operand::Decoration(Decoration::Block),
-                ],
-            )
-        );
+        self.module.annotations.push(Instruction::new(
+            Op::Decorate,
+            None,
+            None,
+            vec![
+                Operand::IdRef(ty_id),
+                Operand::Decoration(Decoration::Block),
+            ],
+        ));
 
         let ptr_id = self.get_id();
-        self.module.types_global_values.push(
-            Instruction::new(
-                Op::TypePointer,
-                None,
-                Some(ptr_id),
-                vec![
-                    Operand::StorageClass(StorageClass::Uniform),
-                    Operand::IdRef(ty_id),
-                ]
-            )
-        );
+        self.module.types_global_values.push(Instruction::new(
+            Op::TypePointer,
+            None,
+            Some(ptr_id),
+            vec![
+                Operand::StorageClass(StorageClass::Uniform),
+                Operand::IdRef(ty_id),
+            ],
+        ));
 
         let var_id = self.get_id();
-        self.module.types_global_values.push(
-            Instruction::new(
-                Op::Variable,
-                Some(ptr_id),
-                Some(var_id),
-                vec![
-                    Operand::StorageClass(StorageClass::Uniform),
-                ]
-            )
-        );
+        self.module.types_global_values.push(Instruction::new(
+            Op::Variable,
+            Some(ptr_id),
+            Some(var_id),
+            vec![Operand::StorageClass(StorageClass::Uniform)],
+        ));
 
-        VariableName::Named(String::from("Uniforms")).decorate_variable(self, var_id);
+        println!("uniforms_name {:?}", self.settings.uniforms_name);
+        if let Some(name) = self.settings.uniforms_name.clone() {
+            VariableName::Named(name).decorate_variable(self, var_id);
+        }
 
         let res = (ty_id, var_id);
         self.uniform = Some(res);
@@ -313,11 +312,12 @@ impl ModuleBuilder {
     /// Get the type of this shader module
     #[inline]
     pub fn get_type(&self) -> ShaderType {
-        self.mod_type
+        self.settings.mod_type
     }
 
     /// Get the ID bound of this module
     #[inline]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn bound(&self) -> u32 {
         self.counter.load(Ordering::SeqCst) as u32
     }
@@ -330,7 +330,8 @@ impl ModuleBuilder {
 
     /// Get the list of inputs and outputs of this module
     pub fn get_io(&self) -> Vec<u32> {
-        self.inputs.iter()
+        self.inputs
+            .iter()
             .chain(self.outputs.iter())
             .cloned()
             .collect()
@@ -339,7 +340,8 @@ impl ModuleBuilder {
     /// Build the module, returning a list of instructions
     pub fn build(mut self) -> Result<Module> {
         let mut uniforms: Vec<(Word, Word, &'static TypeName)> = {
-            self.uniforms.iter()
+            self.uniforms
+                .iter()
                 .map(|(k, &(a, b))| (*k, a, b))
                 .collect()
         };
@@ -347,47 +349,28 @@ impl ModuleBuilder {
         uniforms.sort_by_key(|&(k, _, _)| k);
 
         Ok(Module {
-            header: Some(
-                ModuleHeader {
-                    magic_number: MAGIC_NUMBER,
-                    version: (MAJOR_VERSION << 16) | (MAJOR_VERSION << 8),
-                    generator: 0xffff_0009,
-                    bound: self.bound(),
-                    reserved_word: 0,
-                },
-            ),
+            header: Some(ModuleHeader {
+                magic_number: MAGIC_NUMBER,
+                version: (MAJOR_VERSION << 16) | (MAJOR_VERSION << 8),
+                generator: 0xffff_0009,
+                bound: self.bound(),
+                reserved_word: 0,
+            }),
 
-            ext_inst_imports:
-                self.imports.into_iter()
-                    .map(|(_, (_, op))| op)
-                    .collect(),
+            ext_inst_imports: self.imports.into_iter().map(|(_, (_, op))| op).collect(),
 
-            entry_points: vec![
-                Instruction::new(
-                    Op::EntryPoint,
-                    None, None,
-                    {
-                        let mut res = Vec::with_capacity(
-                            self.inputs.len() +
-                            self.outputs.len() +
-                            3
-                        );
+            entry_points: vec![Instruction::new(Op::EntryPoint, None, None, {
+                let mut res = Vec::with_capacity(self.inputs.len() + self.outputs.len() + 3);
 
-                        res.push(Operand::ExecutionModel(self.mod_type));
-                        res.push(Operand::IdRef(ENTRY_ID));
-                        res.push(Operand::LiteralString("main".into()));
+                res.push(Operand::ExecutionModel(self.settings.mod_type));
+                res.push(Operand::IdRef(ENTRY_ID));
+                res.push(Operand::LiteralString("main".into()));
 
-                        res.extend(
-                            self.inputs.into_iter().map(Operand::IdRef)
-                        );
-                        res.extend(
-                            self.outputs.into_iter().map(Operand::IdRef)
-                        );
+                res.extend(self.inputs.into_iter().map(Operand::IdRef));
+                res.extend(self.outputs.into_iter().map(Operand::IdRef));
 
-                        res
-                    }
-                )
-            ],
+                res
+            })],
 
             annotations: {
                 let mut res = self.module.annotations;
@@ -395,18 +378,17 @@ impl ModuleBuilder {
                 if let Some((ty_id, _)) = self.uniform {
                     let mut offset = 0;
                     for &(location, _, type_id) in &uniforms {
-                        res.push(
-                            Instruction::new(
-                                Op::MemberDecorate,
-                                None, None,
-                                vec![
-                                    Operand::IdRef(ty_id),
-                                    Operand::LiteralInt32(location),
-                                    Operand::Decoration(Decoration::Offset),
-                                    Operand::LiteralInt32(offset),
-                                ]
-                            )
-                        );
+                        res.push(Instruction::new(
+                            Op::MemberDecorate,
+                            None,
+                            None,
+                            vec![
+                                Operand::IdRef(ty_id),
+                                Operand::LiteralInt32(location),
+                                Operand::Decoration(Decoration::Offset),
+                                Operand::LiteralInt32(offset),
+                            ],
+                        ));
 
                         offset += type_id.size();
                     }
@@ -416,22 +398,20 @@ impl ModuleBuilder {
             },
 
             types_global_values: {
-                let mut declarations = Vec::with_capacity(
-                    self.module.types_global_values.len() + 1
-                );
+                let mut declarations =
+                    Vec::with_capacity(self.module.types_global_values.len() + 1);
 
                 // Uniforms
                 if let Some((ty_id, _)) = self.uniform {
-                    declarations.push(
-                        Instruction::new(
-                            Op::TypeStruct,
-                            None,
-                            Some(ty_id),
-                            uniforms.into_iter()
-                                .map(|(_, v, _)| Operand::IdRef(v))
-                                .collect()
-                        )
-                    );
+                    declarations.push(Instruction::new(
+                        Op::TypeStruct,
+                        None,
+                        Some(ty_id),
+                        uniforms
+                            .into_iter()
+                            .map(|(_, v, _)| Operand::IdRef(v))
+                            .collect(),
+                    ));
                 }
 
                 // Declarations
@@ -442,58 +422,37 @@ impl ModuleBuilder {
             // Functions
             functions: {
                 iter::once(Function {
-                    def: Some(
-                        Instruction::new(
-                            Op::Function,
-                            Some(VOID_ID),
-                            Some(ENTRY_ID),
-                            vec![
-                                Operand::FunctionControl(FunctionControl::empty()),
-                                Operand::IdRef(FUNC_ID),
-                            ]
-                        )
-                    ),
-                    end: Some(
-                        Instruction::new(
-                            Op::FunctionEnd,
-                            None, None,
-                            Vec::new()
-                        )
-                    ),
+                    def: Some(Instruction::new(
+                        Op::Function,
+                        Some(VOID_ID),
+                        Some(ENTRY_ID),
+                        vec![
+                            Operand::FunctionControl(FunctionControl::empty()),
+                            Operand::IdRef(FUNC_ID),
+                        ],
+                    )),
+                    end: Some(Instruction::new(Op::FunctionEnd, None, None, Vec::new())),
                     parameters: Vec::new(),
-                    basic_blocks: vec![
-                        BasicBlock {
-                            label: Some(
-                                Instruction::new(
-                                    Op::Label,
-                                    None,
-                                    Some(LABEL_ID),
-                                    Vec::new()
-                                )
-                            ),
-                            instructions: {
-                                let mut res = self.instructions;
-                                res.push(
-                                    Instruction::new(
-                                        Op::Return,
-                                        None, None,
-                                        Vec::new()
-                                    )
-                                );
+                    basic_blocks: vec![BasicBlock {
+                        label: Some(Instruction::new(
+                            Op::Label,
+                            None,
+                            Some(LABEL_ID),
+                            Vec::new(),
+                        )),
+                        instructions: {
+                            let mut res = self.instructions;
+                            res.push(Instruction::new(Op::Return, None, None, Vec::new()));
 
-                                res
-                            }
-                        }
-                    ],
+                            res
+                        },
+                    }],
                 })
-                .chain(
-                    self.functions.into_iter()
-                        .map(|(_, _, _, func)| func)
-                )
+                .chain(self.functions.into_iter().map(|(_, _, _, func)| func))
                 .collect()
             },
 
-            .. self.module
+            ..self.module
         })
     }
 
@@ -516,17 +475,15 @@ impl ModuleBuilder {
 
         Ok(unsafe {
             mem::forget(res);
-            Vec::from_raw_parts(
-                mem::transmute(ptr),
-                len, cap,
-            )
+            Vec::from_raw_parts(ptr as *mut u8, len, cap)
         })
     }
 }
 
-impl Builder for ModuleBuilder {
+impl BuilderTrait for Builder {
     /// Acquire a new identifier to be used in the module
     #[inline]
+    #[allow(clippy::cast_possible_truncation)]
     fn get_id(&mut self) -> Word {
         self.counter.fetch_add(1, Ordering::SeqCst) as Word
     }
@@ -538,17 +495,18 @@ impl Builder for ModuleBuilder {
         }
 
         let ext_id = self.get_id();
-        self.imports.insert(name, (
-            ext_id,
-            Instruction::new(
-                Op::ExtInstImport,
-                None,
-                Some(ext_id),
-                vec![
-                    Operand::LiteralString(name.into()),
-                ]
-            )
-        ));
+        self.imports.insert(
+            name,
+            (
+                ext_id,
+                Instruction::new(
+                    Op::ExtInstImport,
+                    None,
+                    Some(ext_id),
+                    vec![Operand::LiteralString(name.into())],
+                ),
+            ),
+        );
 
         ext_id
     }
@@ -565,125 +523,114 @@ impl Builder for ModuleBuilder {
             TypeName::Bool => {
                 let bool_id = self.get_id();
 
-                self.module.types_global_values.push(
-                    Instruction::new(
-                        Op::TypeBool,
-                        None,
-                        Some(bool_id),
-                        vec![]
-                    )
-                );
+                self.module.types_global_values.push(Instruction::new(
+                    Op::TypeBool,
+                    None,
+                    Some(bool_id),
+                    vec![],
+                ));
 
                 bool_id
-            },
+            }
             TypeName::Int(is_signed) => {
                 let int_id = self.get_id();
 
-                self.module.types_global_values.push(
-                    Instruction::new(
-                        Op::TypeInt,
-                        None,
-                        Some(int_id),
-                        vec![
-                            Operand::LiteralInt32(32),
-                            Operand::LiteralInt32(if is_signed { 1 } else { 0 })
-                        ]
-                    )
-                );
+                self.module.types_global_values.push(Instruction::new(
+                    Op::TypeInt,
+                    None,
+                    Some(int_id),
+                    vec![
+                        Operand::LiteralInt32(32),
+                        Operand::LiteralInt32(if is_signed { 1 } else { 0 }),
+                    ],
+                ));
 
                 int_id
-            },
+            }
             TypeName::Float(is_double) => {
                 let float_id = self.get_id();
 
-                self.module.types_global_values.push(
-                    Instruction::new(
-                        Op::TypeFloat,
-                        None,
-                        Some(float_id),
-                        vec![
-                            Operand::LiteralInt32(if is_double {
-                                64
-                            } else {
-                                32
-                            })
-                        ]
-                    )
-                );
+                self.module.types_global_values.push(Instruction::new(
+                    Op::TypeFloat,
+                    None,
+                    Some(float_id),
+                    vec![Operand::LiteralInt32(if is_double { 64 } else { 32 })],
+                ));
 
                 float_id
-            },
+            }
             TypeName::Vec(len, scalar) => {
                 let float_id = self.register_type(scalar);
                 let vec_id = self.get_id();
 
-                self.module.types_global_values.push(
-                    Instruction::new(
-                        Op::TypeVector,
-                        None,
-                        Some(vec_id),
-                        vec![
-                            Operand::IdRef(float_id),
-                            Operand::LiteralInt32(len),
-                        ]
-                    )
-                );
+                self.module.types_global_values.push(Instruction::new(
+                    Op::TypeVector,
+                    None,
+                    Some(vec_id),
+                    vec![Operand::IdRef(float_id), Operand::LiteralInt32(len)],
+                ));
 
                 vec_id
-            },
+            }
             TypeName::Mat(len, vec) => {
                 let vec_id = self.register_type(vec);
                 let mat_id = self.get_id();
 
-                self.module.types_global_values.push(
-                    Instruction::new(
-                        Op::TypeMatrix,
-                        None,
-                        Some(mat_id),
-                        vec![
-                            Operand::IdRef(vec_id),
-                            Operand::LiteralInt32(len),
-                        ]
-                    )
-                );
+                self.module.types_global_values.push(Instruction::new(
+                    Op::TypeMatrix,
+                    None,
+                    Some(mat_id),
+                    vec![Operand::IdRef(vec_id), Operand::LiteralInt32(len)],
+                ));
 
                 mat_id
-            },
+            }
             TypeName::Sampler(sampled_type, dimensionality) => {
                 let sample_id = self.register_type(sampled_type);
                 let image_id = self.get_id();
                 let sampler_id = self.get_id();
 
-                self.module.types_global_values.push(
-                    Instruction::new(
-                        Op::TypeImage,
-                        None,
-                        Some(image_id),
-                        vec![
-                            Operand::IdRef(sample_id),
-                            Operand::Dim(dimensionality),
-                            Operand::LiteralInt32(0),
-                            Operand::LiteralInt32(0),
-                            Operand::LiteralInt32(0),
-                            Operand::LiteralInt32(1),
-                            Operand::ImageFormat(ImageFormat::Unknown),
-                        ]
-                    )
-                );
+                self.module.types_global_values.push(Instruction::new(
+                    Op::TypeImage,
+                    None,
+                    Some(image_id),
+                    vec![
+                        Operand::IdRef(sample_id),
+                        Operand::Dim(dimensionality),
+                        Operand::LiteralInt32(0),
+                        Operand::LiteralInt32(0),
+                        Operand::LiteralInt32(0),
+                        Operand::LiteralInt32(1),
+                        Operand::ImageFormat(ImageFormat::Unknown),
+                    ],
+                ));
 
-                self.module.types_global_values.push(
-                    Instruction::new(
-                        Op::TypeSampledImage,
-                        None,
-                        Some(sampler_id),
-                        vec![
-                            Operand::IdRef(image_id),
-                        ]
-                    )
-                );
+                self.module.types_global_values.push(Instruction::new(
+                    Op::TypeSampledImage,
+                    None,
+                    Some(sampler_id),
+                    vec![Operand::IdRef(image_id)],
+                ));
 
                 sampler_id
-            },
+            }
+
+            TypeName::_Pointer(inner) => {
+                let inner_id = self.register_type(inner);
+
+                let ptr_id = self.get_id();
+                self.module.types_global_values.push(Instruction::new(
+                    Op::TypePointer,
+                    None,
+                    Some(ptr_id),
+                    vec![
+                        Operand::StorageClass(StorageClass::Uniform),
+                        Operand::IdRef(inner_id),
+                    ],
+                ));
+
+                ptr_id
+            }
         };
 
         self.types.insert(type_id, res_id);
@@ -747,9 +694,13 @@ impl Builder for ModuleBuilder {
     fn push_debug(&mut self, inst: Instruction) {
         self.module.debugs.push(inst);
     }
-    
+
     fn push_parameter(&mut self, _: Word, _: &'static TypeName, _: Instruction) -> Result<()> {
         bail!(ErrorKind::UnsupportedOperation("Parameter"))
+    }
+
+    fn push_function(&mut self, func: FunctionData) {
+        self.functions.push(func);
     }
 
     fn set_return(&mut self, _: &'static TypeName, _: Instruction) -> Result<()> {
@@ -764,21 +715,52 @@ impl Builder for ModuleBuilder {
         self.results.insert(index, res);
     }
 
-    fn get_function(&self, index: FunctionRef) -> Option<(Word, &[&'static TypeName], Option<&'static TypeName>)> {
-        self.functions.get(index.0).map(|&(id, ref args, res, _)| (id, args as &[_], res))
+    fn get_function(
+        &self,
+        index: FunctionRef,
+    ) -> Option<(Word, &[&'static TypeName], Option<&'static TypeName>)> {
+        self.functions
+            .get(index.0)
+            .map(|&(id, ref args, res, _)| (id, args as &[_], res))
     }
 }
 
-impl<'a> TryFrom<(&'a Graph, ShaderType)> for ModuleBuilder {
+impl<'a> TryFrom<(&'a Graph, Settings)> for Builder {
     type Error = Error;
-    fn try_from((graph, mod_type): (&'a Graph, ShaderType)) -> Result<ModuleBuilder> {
-        ModuleBuilder::from_graph(graph, mod_type)
+    fn try_from((graph, settings): (&'a Graph, Settings)) -> Result<Self> {
+        Self::from_graph(graph, settings)
     }
 }
 
-impl<'a> TryFrom<(&'a RasenModule, ShaderType)> for ModuleBuilder {
+impl<'a> TryFrom<(&'a RasenModule, Settings)> for Builder {
     type Error = Error;
-    fn try_from((module, mod_type): (&'a RasenModule, ShaderType)) -> Result<ModuleBuilder> {
-        ModuleBuilder::from_module(module, mod_type)
+    fn try_from((module, settings): (&'a RasenModule, Settings)) -> Result<Self> {
+        Self::from_module(module, settings)
+    }
+}
+
+impl<'a> TryFrom<(&'a Graph, ShaderType)> for Builder {
+    type Error = Error;
+    fn try_from((graph, mod_type): (&'a Graph, ShaderType)) -> Result<Self> {
+        Self::from_graph(
+            graph,
+            Settings {
+                mod_type,
+                uniforms_name: None,
+            },
+        )
+    }
+}
+
+impl<'a> TryFrom<(&'a RasenModule, ShaderType)> for Builder {
+    type Error = Error;
+    fn try_from((module, mod_type): (&'a RasenModule, ShaderType)) -> Result<Self> {
+        Self::from_module(
+            module,
+            Settings {
+                mod_type,
+                uniforms_name: None,
+            },
+        )
     }
 }

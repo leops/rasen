@@ -1,3 +1,5 @@
+#![allow(clippy::enum_glob_use)]
+
 use spirv_headers::*;
 use spirv_headers::GLOp::*;
 use rspirv::mr::{

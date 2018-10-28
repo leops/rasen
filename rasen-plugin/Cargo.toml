@@ -6,15 +6,12 @@ authors = ["l3ops <github@leops.me>"]
 [lib]
 plugin = true
 
-[features]
-default = []
-
 [dependencies]
-quote = "0.3.15"
-clippy = { version = "0.0.134", optional = true }
+quote = "0.6.8"
+proc-macro2 = "0.4.20"
 
 [dev-dependencies]
 pretty_assertions = "0.5.1"
-rspirv = "0.5.2"
+rspirv = "0.5.4"
 rasen = { version = "0.12.0", path = "../rasen" }
 rasen-dsl = { version = "0.2.0", path = "../rasen-dsl", features = ["functions"] }

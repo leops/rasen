@@ -1,19 +1,19 @@
 use std::iter;
 
-use petgraph::graph::{NodeIndex};
 use fnv::FnvHashMap as HashMap;
+use petgraph::graph::NodeIndex;
 
+use rspirv::mr::{BasicBlock, Function, Instruction, Operand};
 use spirv_headers::*;
-use rspirv::mr::{BasicBlock, Instruction, Function, Operand};
 
+use super::module::{FunctionData, VOID_ID};
+use super::Builder as BuilderTrait;
 use errors::*;
-use module::{FunctionRef};
+use module::FunctionRef;
 use types::{TypeName, TypedValue};
-use super::Builder;
-use super::module::{ModuleBuilder, VOID_ID};
 
-pub struct FunctionBuilder<'a> {
-    module: &'a mut ModuleBuilder,
+pub struct Builder<'a> {
+    module: &'a mut BuilderTrait,
     results: HashMap<NodeIndex<Word>, (&'static TypeName, Word)>,
 
     id: Word,
@@ -22,28 +22,29 @@ pub struct FunctionBuilder<'a> {
     instructions: Vec<Instruction>,
 }
 
-impl<'a> FunctionBuilder<'a> {
-    pub fn new(module: &'a mut ModuleBuilder) -> FunctionBuilder<'a> {
+impl<'a> Builder<'a> {
+    pub fn new(module: &'a mut BuilderTrait) -> Builder<'a> {
         let id = module.get_id();
-        FunctionBuilder {
+        Builder {
             module,
-            results: Default::default(),
+            results: HashMap::default(),
 
             id,
             args: Vec::new(),
             res: None,
-            instructions: vec![
-                Instruction::new(
-                    Op::Return,
-                    None, None,
-                    Vec::new(),
-                )
-            ],
+            instructions: vec![Instruction::new(Op::Return, None, None, Vec::new())],
         }
     }
 
     pub fn build(self) {
-        let FunctionBuilder { module, id, args, instructions, res, .. } = self;
+        let Builder {
+            module,
+            id,
+            args,
+            instructions,
+            res,
+            ..
+        } = self;
 
         let label_id = module.get_id();
         let result_type = if let Some(ty) = res {
@@ -60,57 +61,44 @@ impl<'a> FunctionBuilder<'a> {
             None,
             Some(func_type),
             iter::once(result_type)
-                .chain(
-                    args_ty.iter()
-                        .map(|ty| module.register_type(ty))
-                )
+                .chain(args_ty.iter().map(|ty| module.register_type(ty)))
                 .map(Operand::IdRef)
                 .collect(),
         );
 
-        module.module.types_global_values.push(func_def);
+        module.push_declaration(func_def);
 
-        module.functions.push((
-            id, args_ty, res,
+        module.push_function((
+            id,
+            args_ty,
+            res,
             Function {
-                def: Some(
-                    Instruction::new(
-                        Op::Function,
-                        Some(result_type),
-                        Some(id),
-                        vec![
-                            Operand::FunctionControl(FunctionControl::empty()),
-                            Operand::IdRef(func_type),
-                        ]
-                    )
-                ),
-                end: Some(
-                    Instruction::new(
-                        Op::FunctionEnd,
-                        None, None,
-                        Vec::new()
-                    )
-                ),
+                def: Some(Instruction::new(
+                    Op::Function,
+                    Some(result_type),
+                    Some(id),
+                    vec![
+                        Operand::FunctionControl(FunctionControl::empty()),
+                        Operand::IdRef(func_type),
+                    ],
+                )),
+                end: Some(Instruction::new(Op::FunctionEnd, None, None, Vec::new())),
                 parameters,
-                basic_blocks: vec![
-                    BasicBlock {
-                        label: Some(
-                            Instruction::new(
-                                Op::Label,
-                                None,
-                                Some(label_id),
-                                Vec::new()
-                            )
-                        ),
-                        instructions,
-                    }
-                ],
+                basic_blocks: vec![BasicBlock {
+                    label: Some(Instruction::new(
+                        Op::Label,
+                        None,
+                        Some(label_id),
+                        Vec::new(),
+                    )),
+                    instructions,
+                }],
             },
         ));
     }
 }
 
-impl<'a> Builder for FunctionBuilder<'a> {
+impl<'a> BuilderTrait for Builder<'a> {
     fn get_id(&mut self) -> Word {
         self.module.get_id()
     }
@@ -132,13 +120,14 @@ impl<'a> Builder for FunctionBuilder<'a> {
     }
 
     fn push_instruction(&mut self, inst: Instruction) {
-        self.instructions.push(inst)
+        let index = self.instructions.len() - 1;
+        self.instructions.insert(index, inst)
     }
 
     fn push_declaration(&mut self, inst: Instruction) {
         self.module.push_declaration(inst)
     }
-    
+
     fn push_output(&mut self, id: Word) {
         self.module.push_output(id)
     }
@@ -155,16 +144,21 @@ impl<'a> Builder for FunctionBuilder<'a> {
         self.module.push_debug(inst)
     }
 
-    fn push_parameter(&mut self, location: u32, ty: &'static TypeName, inst: Instruction) -> Result<()> {
+    fn push_function(&mut self, func: FunctionData) {
+        self.module.push_function(func)
+    }
+
+    fn push_parameter(
+        &mut self,
+        location: u32,
+        ty: &'static TypeName,
+        inst: Instruction,
+    ) -> Result<()> {
         let index = location as usize;
         while self.args.len() <= index {
             self.args.push((
                 TypeName::VOID,
-                Instruction::new(
-                    Op::FunctionParameter,
-                    None, None,
-                    Vec::new(),
-                )
+                Instruction::new(Op::FunctionParameter, None, None, Vec::new()),
             ));
         }
 
@@ -174,9 +168,17 @@ impl<'a> Builder for FunctionBuilder<'a> {
     }
 
     fn set_return(&mut self, ty: &'static TypeName, inst: Instruction) -> Result<()> {
-        let last = self.instructions.last_mut().expect("instructions should not be empty");
+        let last = self
+            .instructions
+            .last_mut()
+            .expect("instructions should not be empty");
+
+        if last.class.opcode != Op::Return {
+            Err(String::from("Function has already returned"))?;
+        }
+
         *last = inst;
-        
+
         self.res = Some(ty);
 
         Ok(())
@@ -190,7 +192,10 @@ impl<'a> Builder for FunctionBuilder<'a> {
         self.results.insert(index, res);
     }
 
-    fn get_function(&self, index: FunctionRef) -> Option<(Word, &[&'static TypeName], Option<&'static TypeName>)> {
+    fn get_function(
+        &self,
+        index: FunctionRef,
+    ) -> Option<(Word, &[&'static TypeName], Option<&'static TypeName>)> {
         self.module.get_function(index)
     }
 }

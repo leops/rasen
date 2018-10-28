@@ -2,10 +2,10 @@
 language: rust
 matrix:
     include:
-        - rust: stable
-          env: DSL_FEATURES=''
-        - rust: beta
-          env: DSL_FEATURES=''
+        # - rust: stable
+        #   env: DSL_FEATURES=''
+        # - rust: beta
+        #   env: DSL_FEATURES=''
         - rust: nightly
           env: DSL_FEATURES=functions
 

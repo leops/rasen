@@ -1,11 +1,12 @@
 #![feature(test)]
 
-extern crate test;
 extern crate rasen;
 extern crate rasen_dsl;
+extern crate test;
 
-use test::Bencher;
 use rasen_dsl::prelude::*;
+use std::f32::consts::PI;
+use test::Bencher;
 
 include!("../../tests/dsl.rs");
 
@@ -15,9 +16,7 @@ fn bench_run_basic_frag(b: &mut Bencher) {
         basic_frag(
             vec3(0.0f32, 1.0f32, 0.0f32),
             vec2(0.0f32, 0.0f32),
-            Value::Concrete(Sampler(
-                Vec4(0.25f32, 0.625f32, 1.0f32, 1.0f32),
-            )),
+            Value::Concrete(Sampler(Vec4(0.25f32, 0.625f32, 1.0f32, 1.0f32))),
         );
     });
 }
@@ -29,18 +28,21 @@ fn bench_run_basic_vert(b: &mut Bencher) {
         let a_normal = vec3(0.0f32, 1.0f32, 0.0f32);
         let a_uv = vec2(0.5f32, 0.5f32);
 
+        #[rustfmt::skip]
         let projection = Mat4([
             1.0, 0.0, 0.0, 0.0,
             0.0, 1.0, 0.0, 0.0,
             0.0, 0.0, 1.0, 0.0,
             0.0, 0.0, 0.0, 1.0
         ]);
+        #[rustfmt::skip]
         let view = Mat4([
             1.0, 0.0, 0.0, 0.0,
             0.0, 1.0, 0.0, 0.0,
             0.0, 0.0, 1.0, 0.0,
             0.0, 0.0, 0.0, 1.0
         ]);
+        #[rustfmt::skip]
         let model = Mat4([
             1.0, 0.0, 0.0, 0.0,
             0.0, 1.0, 0.0, 0.0,
@@ -49,10 +51,12 @@ fn bench_run_basic_vert(b: &mut Bencher) {
         ]);
 
         basic_vert(
-            a_pos, a_normal, a_uv,
+            a_pos,
+            a_normal,
+            a_uv,
             projection.into(),
             view.into(),
-            model.into()
+            model.into(),
         )
     });
 }
@@ -60,6 +64,6 @@ fn bench_run_basic_vert(b: &mut Bencher) {
 #[bench]
 fn bench_run_functions(b: &mut Bencher) {
     b.iter(|| {
-        functions(3.14f32.into());
+        functions(PI.into());
     });
 }

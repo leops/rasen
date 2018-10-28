@@ -17,12 +17,18 @@ pub mod traits {
         fn iter(obj: &Self) -> Self::Iter;
     }
 
-    pub trait Scalar: 'static + Copy + IntoValue<Output=Self> + Into<Value<Self>> + ValueIter<Self> + PartialOrd + PartialEq {
+    pub trait Base {
         fn zero() -> Self;
         fn one() -> Self;
     }
 
-    pub trait Numerical: Scalar + Sum + Add<Self, Output=Self> + Sub<Self, Output=Self> + Mul<Self, Output=Self> + Div<Self, Output=Self> + Rem<Self, Output=Self> {
+    pub trait Scalar: 'static + Copy + Base + IntoValue<Output=Self> + Into<Value<Self>> + ValueIter<Self> + PartialOrd + PartialEq {}
+
+    pub trait Math: Base + Add<Self, Output=Self> + Sub<Self, Output=Self> + Mul<Self, Output=Self> + Div<Self, Output=Self> where Self: Sized {
+        //
+    }
+
+    pub trait Numerical: Scalar + Math + Sum + Rem<Self, Output=Self> {
         fn pow(x: Self, y: Self) -> Self;
     }
 
@@ -39,11 +45,13 @@ pub mod traits {
         fn sin(self) -> Self;
         fn cos(self) -> Self;
         fn tan(self) -> Self;
+        fn ln(self) -> Self;
+        fn abs(self) -> Self;
+        fn two() -> Self;
+        fn three() -> Self;
     }
 
     pub trait Vector<S>: Copy + IntoValue<Output=Self> + Into<Value<Self>> + ValueIter<S> + From<Vec<S>> + Index<u32, Output=S> where S: Scalar {
-        fn zero() -> Self;
-        fn one() -> Self;
         fn component_count() -> u32;
     }
 

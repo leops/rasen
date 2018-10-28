@@ -1,10 +1,11 @@
 //! Definitions for the Value type
 
-use rasen::prelude::{Graph, NodeIndex};
-use rasen::module::FunctionRef;
+use rasen::{
+    module::FunctionRef,
+    prelude::{Graph, NodeIndex},
+};
 
-use std::cell::RefMut;
-use std::marker::PhantomData;
+use std::{cell::RefMut, marker::PhantomData};
 
 use module::{Module, ModuleRef};
 
@@ -20,18 +21,14 @@ pub enum FuncKind {
 impl FuncKind {
     pub fn get_graph_mut<'a>(&self, module: ModuleRef<'a>) -> GraphRef<'a> {
         match *self {
-            FuncKind::Main => RefMut::map(
-                module, |module| {
-                    // let module = shader.module.get_mut();
-                    &mut module.main
-                },
-            ),
-            FuncKind::Ref(index) => RefMut::map(
-                module, |module| {
-                    // let module = shader.module.get_mut();
-                    &mut module[index]
-                },
-            ),
+            FuncKind::Main => RefMut::map(module, |module| {
+                // let module = shader.module.get_mut();
+                &mut module.main
+            }),
+            FuncKind::Ref(index) => RefMut::map(module, |module| {
+                // let module = shader.module.get_mut();
+                &mut module[index]
+            }),
         }
     }
 }
@@ -61,6 +58,7 @@ impl<T> Value<T> {
 }
 
 /// Trait implemented by any type the DSL considers the be a "value" (including the Value enum itself)
+#[allow(clippy::stutter)]
 pub trait IntoValue {
     type Output;
 
@@ -70,10 +68,13 @@ pub trait IntoValue {
     fn get_index(&self, graph: GraphRef) -> NodeIndex<u32>;
 }
 
-impl<T> IntoValue for Value<T> where T: IntoValue + Clone {
+impl<T> IntoValue for Value<T>
+where
+    T: IntoValue + Clone,
+{
     type Output = T;
 
-    fn into_value(self) -> Value<T> {
+    fn into_value(self) -> Self {
         self
     }
 
@@ -85,7 +86,10 @@ impl<T> IntoValue for Value<T> where T: IntoValue + Clone {
     }
 }
 
-impl<'a, T> IntoValue for &'a Value<T> where T: IntoValue + Clone {
+impl<'a, T> IntoValue for &'a Value<T>
+where
+    T: IntoValue + Clone,
+{
     type Output = T;
 
     fn into_value(self) -> Value<T> {

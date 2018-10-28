@@ -4,13 +4,11 @@ use std::ops::Index;
 
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use petgraph::{
-    Graph as PetGraph, Outgoing, Incoming, algo,
-};
+use petgraph::{algo, Graph as PetGraph, Incoming, Outgoing};
 
 use super::node::*;
 
-/// Convenience wrapper for [petgraph::Graph](::petgraph::graph::Graph)
+/// Convenience wrapper for [`petgraph::Graph`](petgraph::graph::Graph)
 #[derive(Debug)]
 pub struct Graph {
     graph: PetGraph<Node, u32>,
@@ -19,7 +17,7 @@ pub struct Graph {
 impl Default for Graph {
     /// Create a new empty graph
     fn default() -> Self {
-        Graph {
+        Self {
             graph: PetGraph::new(),
         }
     }
@@ -41,28 +39,27 @@ impl Graph {
     }
 
     /// List all the outputs of the graph
-    #[cfg_attr(feature="clippy", allow(needless_lifetimes))]
-    pub fn outputs<'a>(&'a self) -> Box<Iterator<Item=NodeIndex<u32>> + 'a> {
-        Box::new(
-            self.graph.externals(Outgoing)
-                .filter(move |index| match self.graph.node_weight(*index) {
-                    Some(&Node::Output(_, _, _)) |
-                    Some(&Node::Return) => true,
-                    _ => false,
-                })
-        )
+    #[allow(clippy::needless_lifetimes)]
+    pub fn outputs<'a>(&'a self) -> Box<Iterator<Item = NodeIndex<u32>> + 'a> {
+        Box::new(self.graph.externals(Outgoing).filter(move |index| {
+            match self.graph.node_weight(*index) {
+                Some(&Node::Output(_, _, _)) | Some(&Node::Return) => true,
+                _ => false,
+            }
+        }))
     }
 
     /// List the incoming connections for a node
-    #[cfg_attr(feature="clippy", allow(needless_lifetimes))]
-    pub fn arguments<'a>(&'a self, index: NodeIndex<u32>) -> Box<Iterator<Item=NodeIndex<u32>> + 'a> {
+    #[allow(clippy::needless_lifetimes)]
+    pub fn arguments<'a>(
+        &'a self,
+        index: NodeIndex<u32>,
+    ) -> Box<Iterator<Item = NodeIndex<u32>> + 'a> {
         let mut vec: Vec<_> = self.graph.edges_directed(index, Incoming).collect();
 
         vec.sort_by_key(|e| e.weight());
 
-        Box::new(
-            vec.into_iter().map(|e| e.source())
-        )
+        Box::new(vec.into_iter().map(|e| e.source()))
     }
 }
 

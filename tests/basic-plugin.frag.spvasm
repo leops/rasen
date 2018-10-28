@@ -1,33 +1,30 @@
 ; SPIR-V
 ; Version: 1.1
 ; Generator: Unknown
-; Bound: 39
+; Bound: 34
 OpCapability Shader
 %10 = OpExtInstImport "GLSL.std.450"
 OpMemoryModel Logical GLSL450
-OpEntryPoint Fragment %4 "main" %8 %32 %38
+OpEntryPoint Fragment %4 "main" %8 %27 %33
 OpExecutionMode %4 OriginUpperLeft
 OpName %8 "a_normal"
-OpName %25 "Uniforms"
-OpMemberName %23 0 "material"
-OpName %32 "a_uv"
+OpName %23 "material"
+OpName %27 "a_uv"
 OpDecorate %8 Location 0
-OpDecorate %23 Block
-OpDecorate %32 Location 1
-OpDecorate %38 Location 0
-OpMemberDecorate %23 0 Offset 0
-%26 = OpTypeInt 32 1
-%27 = OpConstant  %26  0
+OpDecorate %23 Location 0
+OpDecorate %27 Location 1
+OpDecorate %33 Location 0
 %5 = OpTypeFloat 32
-%34 = OpTypeVector %5 4
-%37 = OpTypePointer Output %34
-%38 = OpVariable  %37  Output
-%30 = OpTypeVector %5 2
-%31 = OpTypePointer Input %30
-%32 = OpVariable  %31  Input
+%29 = OpTypeVector %5 4
+%32 = OpTypePointer Output %29
+%33 = OpVariable  %32  Output
+%25 = OpTypeVector %5 2
+%26 = OpTypePointer Input %25
+%27 = OpVariable  %26  Input
 %20 = OpTypeImage %5 2D 0 0 0 1 Unknown
 %21 = OpTypeSampledImage %20
 %22 = OpTypePointer Uniform %21
+%23 = OpVariable  %22  Uniform
 %18 = OpConstant  %5  1.0
 %17 = OpConstant  %5  0.1
 %14 = OpConstant  %5  0.2
@@ -39,20 +36,16 @@ OpMemberDecorate %23 0 Offset 0
 %8 = OpVariable  %7  Input
 %1 = OpTypeVoid
 %2 = OpTypeFunction %1
-%23 = OpTypeStruct %21
-%24 = OpTypePointer Uniform %23
-%25 = OpVariable  %24  Uniform
 %4 = OpFunction  %1  None %2
 %3 = OpLabel
 %9 = OpLoad  %6  %8 None
 %11 = OpExtInst  %6  %10 Normalize %9
 %16 = OpDot  %5  %11 %15
 %19 = OpExtInst  %5  %10 FClamp %16 %17 %18
-%28 = OpAccessChain  %22  %25 %27
-%29 = OpLoad  %21  %28 None
-%33 = OpLoad  %30  %32 None
-%35 = OpImageSampleImplicitLod  %34  %29 %33
-%36 = OpVectorTimesScalar  %34  %19 %35
-OpStore %38 %36 None
+%24 = OpLoad  %21  %23 None
+%28 = OpLoad  %25  %27 None
+%30 = OpImageSampleImplicitLod  %29  %24 %28
+%31 = OpVectorTimesScalar  %29  %19 %30
+OpStore %33 %31 None
 OpReturn
 OpFunctionEnd
