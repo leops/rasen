@@ -15,14 +15,11 @@ include!(concat!(env!("OUT_DIR"), "/node.rs"));
 impl Node {
     /// Insert this Node into a Program
     #[allow(clippy::cast_possible_wrap)]
-    pub fn get_result<B>(
+    pub(crate) fn get_result(
         &self,
-        module: &mut B,
+        module: &mut impl Builder,
         args: Vec<(&'static TypeName, u32)>,
-    ) -> Result<(&'static TypeName, u32)>
-    where
-        B: Builder,
-    {
+    ) -> Result<(&'static TypeName, u32)> {
         // use spirv_headers::GLOp::*;
 
         macro_rules! impl_glsl_call {
@@ -466,6 +463,9 @@ impl fmt::Display for Node {
     }
 }
 
+/// Name information for a variable
+/// Can be a well-known builtin, a custom string, or nothing
+/// (the variable is only adressed by its location)
 #[derive(Debug)]
 pub enum VariableName {
     BuiltIn(BuiltIn),
@@ -474,10 +474,7 @@ pub enum VariableName {
 }
 
 impl VariableName {
-    pub(crate) fn decorate_variable<B>(&self, module: &mut B, var_id: Word)
-    where
-        B: Builder,
-    {
+    pub(crate) fn decorate_variable(&self, module: &mut impl Builder, var_id: Word) {
         match *self {
             VariableName::BuiltIn(built_in) => {
                 module.push_annotation(Instruction::new(
@@ -505,10 +502,7 @@ impl VariableName {
         }
     }
 
-    fn decorate_member<B>(&self, module: &mut B, var_id: Word, offset: Word)
-    where
-        B: Builder,
-    {
+    fn decorate_member(&self, module: &mut impl Builder, var_id: Word, offset: Word) {
         match *self {
             VariableName::BuiltIn(built_in) => {
                 module.push_annotation(Instruction::new(

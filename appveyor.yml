@@ -29,9 +29,5 @@ build: false
 
 # Run tests and benchmarks.
 test_script:
-    - cargo test -p rasen
-    - cargo test -p rasen-dsl --features "functions"
-    - cargo test -p rasen-plugin
-    - cargo bench -p rasen
-    - cargo bench -p rasen-dsl --features "functions"
-    - cargo bench -p rasen-plugin
+    - cargo test
+    - cargo bench

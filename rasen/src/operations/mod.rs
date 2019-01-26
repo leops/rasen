@@ -1,5 +1,4 @@
-mod math;
 mod glsl;
+mod math;
 
-pub use self::math::*;
-pub use self::glsl::*;
+pub(crate) use self::{glsl::*, math::*};

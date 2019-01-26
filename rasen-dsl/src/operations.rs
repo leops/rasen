@@ -8,7 +8,6 @@
 
 use rasen::prelude::Node;
 
-#[cfg(feature = "functions")]
 use module::*;
 use types::{traits::*, *};
 use value::*;
@@ -20,9 +19,8 @@ use std::{
 };
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn index<T, V, S>(obj: T, index: u32) -> Value<S>
+pub fn index<V, S>(obj: impl IntoValue<Output = V>, index: u32) -> Value<S>
 where
-    T: IntoValue<Output = V>,
     V: Vector<S>,
     S: Scalar,
 {
@@ -66,10 +64,11 @@ where
     }
 }
 
-pub fn sample<T, C, V, S>(texture: T, coords: C) -> Value<Vec4>
+pub fn sample<V, S>(
+    texture: impl IntoValue<Output = Sampler>,
+    coords: impl IntoValue<Output = V>,
+) -> Value<Vec4>
 where
-    T: IntoValue<Output = Sampler>,
-    C: IntoValue<Output = V>,
     V: Vector<S>,
     S: Scalar,
 {

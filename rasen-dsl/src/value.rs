@@ -58,7 +58,7 @@ impl<T> Value<T> {
 }
 
 /// Trait implemented by any type the DSL considers the be a "value" (including the Value enum itself)
-#[allow(clippy::stutter)]
+#[allow(clippy::module_name_repetitions)]
 pub trait IntoValue {
     type Output;
 

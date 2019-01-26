@@ -1,27 +1,21 @@
 //! Module builder utility
 
-#[cfg(feature = "functions")]
-use std::ops::FnOnce;
-#[cfg(feature = "functions")]
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     cell::{RefCell, RefMut},
     convert::TryFrom,
+    ops::FnOnce,
     rc::Rc,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
-#[cfg(feature = "functions")]
-use rasen::prelude::Node;
 use rasen::prelude::{
-    build_program, build_program_assembly, BuiltIn, Module as CoreModule, ModuleBuilder,
+    build_program, build_program_assembly, BuiltIn, Module as CoreModule, ModuleBuilder, Node,
     VariableName,
 };
 
 use rasen::{errors, module::FunctionRef};
 
-#[cfg(feature = "functions")]
-use value::IntoValue;
-use value::Value;
+use value::{IntoValue, Value};
 
 pub(crate) type ModuleRef<'a> = RefMut<'a, CoreModule>;
 
@@ -63,33 +57,33 @@ pub struct NameWrapper(pub(crate) VariableName);
 
 impl<'a> From<&'a str> for NameWrapper {
     fn from(val: &'a str) -> Self {
-        NameWrapper(VariableName::Named(val.into()))
+        Self(VariableName::Named(val.into()))
     }
 }
 
 impl From<String> for NameWrapper {
     fn from(val: String) -> Self {
-        NameWrapper(VariableName::Named(val))
+        Self(VariableName::Named(val))
     }
 }
 
 impl From<BuiltIn> for NameWrapper {
     fn from(val: BuiltIn) -> Self {
-        NameWrapper(VariableName::BuiltIn(val))
+        Self(VariableName::BuiltIn(val))
     }
 }
 
 impl From<VariableName> for NameWrapper {
     fn from(val: VariableName) -> Self {
-        NameWrapper(val)
+        Self(val)
     }
 }
 
-impl From<Option<VariableName>> for NameWrapper where {
+impl From<Option<VariableName>> for NameWrapper {
     fn from(val: Option<VariableName>) -> Self {
         match val {
             Some(val) => val.into(),
-            None => NameWrapper(VariableName::None),
+            None => Self(VariableName::None),
         }
     }
 }
@@ -144,11 +138,12 @@ impl<F> Function<F> {
         }
     }
 
-    #[cfg(feature = "functions")]
-    pub(crate) fn ret_impl<A, S, R>(module: &Module, func: FunctionRef, source: S)
-    where
+    pub(crate) fn ret_impl<A, R>(
+        module: &Module,
+        func: FunctionRef,
+        source: impl IntoValue<Output = R>,
+    ) where
         F: FnOnce<A, Output = Value<R>>,
-        S: IntoValue<Output = R>,
         Value<R>: IntoValue,
     {
         let src = match source.into_value() {
@@ -166,11 +161,9 @@ impl<F> Function<F> {
         graph.add_edge(src, sink, 0);
     }
 
-    #[cfg(feature = "functions")]
-    pub fn ret<A, S, R>(&self, source: S)
+    pub fn ret<A, R>(&self, source: impl IntoValue<Output = R>)
     where
         F: FnOnce<A, Output = Value<R>>,
-        S: IntoValue<Output = R>,
         Value<R>: IntoValue,
     {
         Self::ret_impl(&self.module, self.func, source);

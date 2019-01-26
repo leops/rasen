@@ -5,7 +5,7 @@ use proc_macro2::{Ident, Span, TokenStream};
 fn operation(
     name: &str,
     args: u32,
-    adnl_generics: &[Ident],
+    adnl_generics: &[&str],
     constraints: &TokenStream,
     implementation: &TokenStream,
 ) -> TokenStream {
@@ -34,7 +34,7 @@ fn operation(
     let args2 = args.clone();
 
     for gen in adnl_generics {
-        generics.push(gen.clone());
+        generics.push(Ident::new(gen, Span::call_site()));
     }
 
     let method_impl = match_values(
@@ -130,9 +130,9 @@ pub fn match_values(names: &[Ident], concrete: &TokenStream, index: TokenStream)
 }
 
 pub fn impl_operations() -> Vec<TokenStream> {
-    let operations: &[(&str, u32, &[Ident], TokenStream, TokenStream)] = &[
+    let operations: &[(&str, u32, &[&str], TokenStream, TokenStream)] = &[
         (
-            "Normalize", 1, &[ Ident::new("S", Span::call_site()) ],
+            "Normalize", 1, &[ "S" ],
             quote! { where T0: IntoValue<Output=R>, R: Vector<S>, S: Floating },
             quote! {
                 let count = R::component_count();
@@ -145,7 +145,7 @@ pub fn impl_operations() -> Vec<TokenStream> {
                 vec.into()
             }
         ), (
-            "Dot", 2, &[ Ident::new("V", Span::call_site()) ],
+            "Dot", 2, &[ "V" ],
             quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R>, R: Numerical },
             quote! {
                 let count = V::component_count();
@@ -162,7 +162,7 @@ pub fn impl_operations() -> Vec<TokenStream> {
                 min(max(x, min_val), max_val)
             }
         ), (
-            "Cross", 2, &[ Ident::new("S", Span::call_site()) ],
+            "Cross", 2, &[ "S" ],
             quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S>, S: Numerical },
             quote! {
                 let vec: R = vec![
@@ -227,7 +227,7 @@ pub fn impl_operations() -> Vec<TokenStream> {
                 (if arg_1 > arg_0 { arg_1 } else { arg_0 }).into()
             }
         ), (
-            "Length", 1, &[ Ident::new("V", Span::call_site()) ],
+            "Length", 1, &[ "V" ],
             quote! { where T0: IntoValue<Output=V>, V: Vector<R>, R: Floating },
             quote! {
                 let count = V::component_count();
@@ -240,13 +240,13 @@ pub fn impl_operations() -> Vec<TokenStream> {
                 length.sqrt().into()
             }
         ), (
-            "Distance", 2, &[ Ident::new("V", Span::call_site()) ],
+            "Distance", 2, &[ "V" ],
             quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R> + Sub<V, Output=V>, R: Floating },
             quote! {
                 length(arg_0 - arg_1)
             }
         ), (
-            "Reflect", 2, &[ Ident::new("S", Span::call_site()) ],
+            "Reflect", 2, &[ "S" ],
             quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S> + Sub<R, Output=R>, S: Numerical + Mul<R, Output=R> },
             quote! {
                 let res: S = match dot(arg_1, arg_0) {
@@ -258,7 +258,7 @@ pub fn impl_operations() -> Vec<TokenStream> {
                 res.into()
             }
         ), (
-            "Refract", 3, &[ Ident::new("S", Span::call_site()) ],
+            "Refract", 3, &[ "S" ],
             quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=S>, R: Math + Vector<S> + Sub<R, Output=R>, S: Floating + Mul<R, Output=R> },
             quote! {
                 let one: S = S::one();
@@ -279,7 +279,7 @@ pub fn impl_operations() -> Vec<TokenStream> {
                 res.into()
             }
         ), (
-            "Mix", 3, &[ Ident::new("V0", Span::call_site()) ],
+            "Mix", 3, &[ "V0" ],
             quote!{
                 where T0: IntoValue<Output=V0>,
                     T1: IntoValue<Output=V0>,
@@ -335,7 +335,7 @@ pub fn impl_operations() -> Vec<TokenStream> {
                 a * c
             }
         ), (
-            "Inverse", 1, &[ Ident::new("V", Span::call_site()), Ident::new("S", Span::call_site()) ],
+            "Inverse", 1, &[ "V", "S" ],
             quote! { where T0: IntoValue<Output=R>, R: Matrix<V, S>, V: Vector<S>, S: Scalar },
             quote! {
                 unimplemented!()

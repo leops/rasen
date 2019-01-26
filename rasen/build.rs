@@ -1,5 +1,5 @@
 #![recursion_limit = "128"]
-#![warn(clippy::pedantic)]
+#![warn(clippy::all, clippy::pedantic)]
 
 #[macro_use]
 extern crate quote;

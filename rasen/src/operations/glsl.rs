@@ -13,7 +13,7 @@ use errors::*;
 macro_rules! unary_vec {
     ( $name:ident, $op:ident ) => {
         #[inline]
-        pub fn $name<B: Builder>(builder: &mut B, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+        pub(crate) fn $name<B: Builder>(builder: &mut B, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
             if args.len() != 1 {
@@ -56,7 +56,7 @@ unary_vec!(length, Length);
 macro_rules! variadic_any {
     ( $name:ident, $op:ident, $scode:ident, $ucode:ident, $fcode:ident ) => {
         #[inline]
-        pub fn $name<B: Builder>(builder: &mut B, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+        pub(crate) fn $name<B: Builder>(builder: &mut B, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
             let (l_arg, r_arg) = match args.len() {
@@ -119,7 +119,7 @@ variadic_any!(max, Max, SMax, UMax, FMax);
 macro_rules! trinary_any {
     ($name:ident, $op:ident, $fcode:ident$(, $scode:ident, $ucode:ident )*) => {
         #[inline]
-        pub fn $name<B: Builder>(builder: &mut B, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
+        pub(crate) fn $name<B: Builder>(builder: &mut B, args: Vec<(&'static TypeName, u32)>) -> Result<(&'static TypeName, u32)> {
             use types::TypeName::*;
 
             if args.len() != 3 {
@@ -176,7 +176,7 @@ trinary_any!(clamp, Clamp, FClamp, SClamp, UClamp);
 trinary_any!(mix, Mix, FMix);
 
 #[inline]
-pub fn distance<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
+pub(crate) fn distance<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 2 {
@@ -216,7 +216,7 @@ pub fn distance<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) 
 }
 
 #[inline]
-pub fn reflect<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
+pub(crate) fn reflect<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 2 {
@@ -254,7 +254,7 @@ pub fn reflect<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -
 }
 
 #[inline]
-pub fn refract<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
+pub(crate) fn refract<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() != 3 {
@@ -294,7 +294,7 @@ pub fn refract<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -
 }
 
 #[inline]
-pub fn sample<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
+pub(crate) fn sample<B: Builder>(builder: &mut B, args: &[(&'static TypeName, u32)]) -> Result<(&'static TypeName, u32)> {
     use types::TypeName::*;
 
     if args.len() < 2 || args.len() > 3 {

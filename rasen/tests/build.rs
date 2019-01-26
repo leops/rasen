@@ -1,9 +1,8 @@
 #![feature(try_from)]
 
 extern crate rasen;
-#[macro_use]
-extern crate pretty_assertions;
 extern crate rspirv;
+extern crate insta;
 
 use rasen::prelude::*;
 
@@ -21,7 +20,8 @@ fn test_build_basic_vert() {
         },
     )
     .unwrap();
-    check_or_update!(assembly, "../../tests/basic.vert.spvasm");
+
+    assert_spirv_snapshot_matches!("basic.vert", assembly);
 }
 
 #[test]
@@ -35,7 +35,8 @@ fn test_build_basic_frag() {
         },
     )
     .unwrap();
-    check_or_update!(assembly, "../../tests/basic.frag.spvasm");
+
+    assert_spirv_snapshot_matches!("basic.frag", assembly);
 }
 
 #[test]
@@ -72,5 +73,6 @@ fn test_build_function() {
         },
     )
     .unwrap();
-    check_or_update!(assembly, "../../tests/functions.spvasm");
+
+    assert_spirv_snapshot_matches!("functions", assembly);
 }

@@ -3,9 +3,8 @@
 
 extern crate rasen;
 extern crate rasen_dsl;
-#[macro_use]
-extern crate pretty_assertions;
 extern crate rspirv;
+extern crate insta;
 
 use rasen_dsl::prelude::*;
 use std::f32::consts::PI;
@@ -22,7 +21,8 @@ fn gen_basic_vert() {
             uniforms_name: Some(String::from("Uniforms")),
         })
         .unwrap();
-    check_or_update!(assembly, "../../tests/basic-plugin.vert.spvasm");
+
+    assert_spirv_snapshot_matches!("basic-plugin.vert", assembly);
 }
 
 #[test]
@@ -34,7 +34,8 @@ fn gen_basic_frag() {
             uniforms_name: Some(String::from("Uniforms")),
         })
         .unwrap();
-    check_or_update!(assembly, "../../tests/basic-plugin.frag.spvasm");
+
+    assert_spirv_snapshot_matches!("basic-plugin.frag", assembly);
 }
 
 #[test]
@@ -57,5 +58,6 @@ fn gen_functions() {
             uniforms_name: Some(String::from("Uniforms")),
         })
         .unwrap();
-    check_or_update!(assembly, "../../tests/functions.spvasm");
+
+    assert_spirv_snapshot_matches!("functions", assembly);
 }

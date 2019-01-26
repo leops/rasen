@@ -62,7 +62,6 @@ fn impl_vector_times_matrix(
     }
 }
 
-#[allow(clippy::match_same_arms)]
 pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<TokenStream> {
     let left_res = left_type.result.clone();
     let right_res = right_type.result.clone();

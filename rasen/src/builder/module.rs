@@ -1,18 +1,22 @@
-use std::convert::TryFrom;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{iter, mem};
+use std::{
+    convert::TryFrom,
+    iter, mem,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use fnv::FnvHashMap as HashMap;
-use petgraph::algo::toposort;
-use petgraph::graph::{Graph as PetGraph, NodeIndex};
+use petgraph::{
+    algo::toposort,
+    graph::{Graph as PetGraph, NodeIndex},
+};
 
-use rspirv::binary::{Assemble, Disassemble};
-use rspirv::mr::{BasicBlock, Function, Instruction, Module, ModuleHeader, Operand};
-use spirv_headers::ExecutionModel as ShaderType;
-use spirv_headers::*;
+use rspirv::{
+    binary::{Assemble, Disassemble},
+    mr::{BasicBlock, Function, Instruction, Module, ModuleHeader, Operand},
+};
+use spirv_headers::{ExecutionModel as ShaderType, *};
 
-use super::function::Builder as FunctionBuilder;
-use super::Builder as BuilderTrait;
+use super::{function::Builder as FunctionBuilder, Builder as BuilderTrait};
 use errors::*;
 use graph::*;
 use module::{FunctionRef, Module as RasenModule};
@@ -118,7 +122,7 @@ fn sort_instructions(unsorted: &[Instruction]) -> Result<Vec<Instruction>> {
     }
 }
 
-pub type FunctionData = (
+pub(crate) type FunctionData = (
     Word,
     Vec<&'static TypeName>,
     Option<&'static TypeName>,
@@ -309,32 +313,11 @@ impl Builder {
         res
     }
 
-    /// Get the type of this shader module
-    #[inline]
-    pub fn get_type(&self) -> ShaderType {
-        self.settings.mod_type
-    }
-
     /// Get the ID bound of this module
     #[inline]
     #[allow(clippy::cast_possible_truncation)]
-    pub fn bound(&self) -> u32 {
+    pub(crate) fn bound(&self) -> u32 {
         self.counter.load(Ordering::SeqCst) as u32
-    }
-
-    /// Get the list of extensions imported by this module
-    #[inline]
-    pub fn get_imports(&self) -> Vec<&'static str> {
-        self.imports.keys().cloned().collect()
-    }
-
-    /// Get the list of inputs and outputs of this module
-    pub fn get_io(&self) -> Vec<u32> {
-        self.inputs
-            .iter()
-            .chain(self.outputs.iter())
-            .cloned()
-            .collect()
     }
 
     /// Build the module, returning a list of instructions
@@ -586,7 +569,7 @@ impl BuilderTrait for Builder {
                 mat_id
             }
             TypeName::Sampler(sampled_type, dimensionality) => {
-                let sample_id = self.register_type(sampled_type);
+                let fragment_id = self.register_type(sampled_type);
                 let image_id = self.get_id();
                 let sampler_id = self.get_id();
 
@@ -595,7 +578,7 @@ impl BuilderTrait for Builder {
                     None,
                     Some(image_id),
                     vec![
-                        Operand::IdRef(sample_id),
+                        Operand::IdRef(fragment_id),
                         Operand::Dim(dimensionality),
                         Operand::LiteralInt32(0),
                         Operand::LiteralInt32(0),
@@ -707,8 +690,8 @@ impl BuilderTrait for Builder {
         bail!(ErrorKind::UnsupportedOperation("Return"))
     }
 
-    fn get_result(&self, index: &NodeIndex<u32>) -> Option<(&'static TypeName, u32)> {
-        self.results.get(index).cloned()
+    fn get_result(&self, index: NodeIndex<u32>) -> Option<(&'static TypeName, u32)> {
+        self.results.get(&index).cloned()
     }
 
     fn set_result(&mut self, index: NodeIndex<u32>, res: (&'static TypeName, u32)) {

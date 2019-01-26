@@ -10,9 +10,10 @@ use types::{TypeName, TypedValue};
 mod function;
 mod module;
 
-pub use self::module::{Builder as ModuleBuilder, FunctionData, Settings};
+pub(crate) use self::module::FunctionData;
+pub use self::module::{Builder as ModuleBuilder, Settings};
 
-pub trait Builder {
+pub(crate) trait Builder {
     /// Acquire a new identifier to be used in the module
     fn get_id(&mut self) -> Word;
 
@@ -43,7 +44,7 @@ pub trait Builder {
     ) -> Result<()>;
     fn set_return(&mut self, ty: &'static TypeName, inst: Instruction) -> Result<()>;
 
-    fn get_result(&self, index: &NodeIndex<u32>) -> Option<(&'static TypeName, u32)>;
+    fn get_result(&self, index: NodeIndex<u32>) -> Option<(&'static TypeName, u32)>;
     fn set_result(&mut self, index: NodeIndex<u32>, res: (&'static TypeName, u32));
 
     fn get_function(
@@ -55,7 +56,7 @@ pub trait Builder {
     where
         Self: Sized,
     {
-        if let Some(res) = self.get_result(&index) {
+        if let Some(res) = self.get_result(index) {
             return Ok(res);
         }
 

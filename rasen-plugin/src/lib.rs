@@ -71,19 +71,18 @@
 
 #![recursion_limit="256"]
 #![feature(plugin_registrar, rustc_private, custom_attribute, box_syntax)]
-#![warn(clippy::pedantic)]
+#![warn(clippy::all, clippy::pedantic)]
 
 extern crate rustc_plugin;
 extern crate syntax;
 #[macro_use] extern crate quote;
 extern crate proc_macro2;
 
-use syntax::source_map::Span;
+use syntax::source_map::{Span, FileName};
 use syntax::symbol::Symbol;
 use syntax::ext::build::AstBuilder;
 use rustc_plugin::registry::Registry;
-use syntax::parse::token::{Token, Lit};
-use syntax::ext::quote::rt::ExtParseUtils;
+use syntax::parse::{self, token::{Token, Lit}};
 use syntax::tokenstream::{TokenStream, TokenTree};
 use syntax::ast::{
     self, Item, ItemKind,
@@ -153,7 +152,7 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
             let uni_id: Vec<_> = (0..uniforms.len()).map(|i| i as u32).collect();
             let out_id: Vec<_> = (0..outputs.len()).map(|i| i as u32).collect();
 
-            Some(quote! {
+            Some((format!("{}_module", ident), quote! {
                 #[allow(dead_code)]
                 pub fn #aux_name() -> Module {
                     let module = Module::new();
@@ -163,7 +162,7 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
                     #( module.output(#out_id, None, #outputs); )*
                     module
                 }
-            })
+            }))
         } else {
             None
         }
@@ -171,10 +170,15 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
         None
     };
 
-    if let Some(tokens) = tokens {
+    if let Some((name, tokens)) = tokens {
+        let mut parser = parse::new_parser_from_source_str(
+            ecx.parse_sess,
+            FileName::Custom(name),
+            tokens.to_string(),
+        );
         vec![
             item,
-            Annotatable::Item(ecx.parse_item(tokens.to_string())),
+            Annotatable::Item(parser.parse_item().expect("result").expect("option")),
         ]
     } else {
         ecx.span_fatal(span, "Unsupported item for Rasen module attribute")

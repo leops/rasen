@@ -11,7 +11,7 @@ quote = "0.6.8"
 proc-macro2 = "0.4.20"
 
 [dev-dependencies]
-pretty_assertions = "0.5.1"
 rspirv = "0.5.4"
 rasen = { version = "0.12.0", path = "../rasen" }
-rasen-dsl = { version = "0.2.0", path = "../rasen-dsl", features = ["functions"] }
+rasen-dsl = { version = "0.2.0", path = "../rasen-dsl" }
+insta = { git = "https://github.com/mitsuhiko/insta", rev="7432f45", version = "0.5.2" }

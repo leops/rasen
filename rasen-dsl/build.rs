@@ -1,7 +1,7 @@
 //! Internal procedural macro provider for the rasen-dsl crate
 
 #![recursion_limit = "256"]
-#![warn(clippy::pedantic)]
+#![warn(clippy::all, clippy::pedantic)]
 
 extern crate syn;
 #[macro_use]
@@ -9,11 +9,7 @@ extern crate quote;
 extern crate proc_macro2;
 
 use proc_macro2::TokenStream;
-use std::env;
-use std::fmt::Write as FmtWrite;
-use std::fs::File;
-use std::io::Write;
-use std::path::Path;
+use std::{env, fmt::Write as FmtWrite, fs::File, io::Write, path::Path};
 
 mod codegen;
 use codegen::*;

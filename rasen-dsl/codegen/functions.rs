@@ -71,7 +71,6 @@ pub fn impl_fn() -> Vec<TokenStream> {
                     );
 
                     quote! {
-                        #[cfg(feature = "functions")]
                         impl<T, R: IntoValue + Clone, #( #types2: IntoValue + Clone ),*> #trt<#tuple> for Function<T> where T: #trt<#tuple, Output=Value<R>>, #( Function<T>: Parameter<#types3> ),* {
                             #output
                             extern "rust-call" fn #func(#prefix self, ( #( #args1, )* ): #tuple) -> Value<R> {

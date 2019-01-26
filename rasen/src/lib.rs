@@ -59,7 +59,7 @@
 //!
 
 #![feature(try_from)]
-#![warn(clippy::pedantic)]
+#![warn(clippy::all, clippy::pedantic)]
 
 extern crate petgraph;
 extern crate rspirv;

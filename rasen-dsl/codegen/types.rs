@@ -264,28 +264,17 @@ fn type_vector(
     let lower = Ident::new(&name.to_string().to_lowercase(), Span::call_site());
     let upper = Ident::new(&name.to_string().to_uppercase(), Span::call_site());
     let indices: Vec<u32> = (0..size).collect();
-    let generics: Vec<_> = (0..size)
-        .map(|i| Ident::new(&format!("T{}", i), Span::call_site()))
-        .collect();
-    let args1: Vec<_> = generics
-        .iter()
-        .map(|gen| Ident::new(&gen.to_string().to_lowercase(), Span::call_site()))
+    let args1: Vec<_> = (0..size)
+        .map(|i| Ident::new(&format!("arg_{}", i), Span::call_site()))
         .collect();
     let args2 = args1.clone();
     let args3 = args1.clone();
     let arg_list: Vec<_> = {
-        generics
+        args1
             .iter()
-            .zip(args1.iter())
-            .map(|(gen, name)| quote! { #name: #gen })
-            .collect()
-    };
-    let constraints: Vec<_> = {
-        generics
-            .iter()
-            .map(|gen| {
+            .map(|name| {
                 let comp = component.name.clone();
-                quote! { #gen: IntoValue<Output=#comp> }
+                quote! { #name: impl IntoValue<Output=#comp> }
             })
             .collect()
     };
@@ -342,7 +331,7 @@ fn type_vector(
         }
 
         #[inline]
-        pub fn #lower< #( #generics ),* >( #( #arg_list ),* ) -> Value<#name> where #( #constraints ),* {
+        pub fn #lower( #( #arg_list ),* ) -> Value<#name> {
             #func_impl
         }
     }
@@ -372,12 +361,8 @@ fn type_matrix(
     let lower = Ident::new(&name.to_string().to_lowercase(), Span::call_site());
     let upper = Ident::new(&name.to_string().to_uppercase(), Span::call_site());
     let indices: Vec<u32> = (0..size).collect();
-    let generics: Vec<_> = (0..size)
-        .map(|i| Ident::new(&format!("T{}", i), Span::call_site()))
-        .collect();
-    let args1: Vec<_> = generics
-        .iter()
-        .map(|gen| Ident::new(&gen.to_string().to_lowercase(), Span::call_site()))
+    let args1: Vec<_> = (0..size)
+        .map(|i| Ident::new(&format!("arg_{}", i), Span::call_site()))
         .collect();
     let args2 = args1.clone();
     let args3: Vec<_> = {
@@ -394,18 +379,11 @@ fn type_matrix(
             .collect()
     };
     let arg_list: Vec<_> = {
-        generics
+        args1
             .iter()
-            .zip(args1.iter())
-            .map(|(gen, name)| quote! { #name: #gen })
-            .collect()
-    };
-    let constraints: Vec<_> = {
-        generics
-            .iter()
-            .map(|gen| {
+            .map(|name| {
                 let comp = vector.name.clone();
-                quote! { #gen: IntoValue<Output=#comp> }
+                quote! { #name: impl IntoValue<Output=#comp> }
             })
             .collect()
     };
@@ -459,7 +437,7 @@ fn type_matrix(
         }
 
         #[inline]
-        pub fn #lower< #( #generics ),* >( #( #arg_list ),* ) -> Value<#name> where #( #constraints ),* {
+        pub fn #lower( #( #arg_list ),* ) -> Value<#name> {
             #func_impl
         }
     }

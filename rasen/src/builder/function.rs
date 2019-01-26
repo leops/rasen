@@ -6,13 +6,15 @@ use petgraph::graph::NodeIndex;
 use rspirv::mr::{BasicBlock, Function, Instruction, Operand};
 use spirv_headers::*;
 
-use super::module::{FunctionData, VOID_ID};
-use super::Builder as BuilderTrait;
+use super::{
+    module::{FunctionData, VOID_ID},
+    Builder as BuilderTrait,
+};
 use errors::*;
 use module::FunctionRef;
 use types::{TypeName, TypedValue};
 
-pub struct Builder<'a> {
+pub(crate) struct Builder<'a> {
     module: &'a mut BuilderTrait,
     results: HashMap<NodeIndex<Word>, (&'static TypeName, Word)>,
 
@@ -184,8 +186,8 @@ impl<'a> BuilderTrait for Builder<'a> {
         Ok(())
     }
 
-    fn get_result(&self, index: &NodeIndex<u32>) -> Option<(&'static TypeName, u32)> {
-        self.results.get(index).cloned()
+    fn get_result(&self, index: NodeIndex<u32>) -> Option<(&'static TypeName, u32)> {
+        self.results.get(&index).cloned()
     }
 
     fn set_result(&mut self, index: NodeIndex<u32>, res: (&'static TypeName, u32)) {

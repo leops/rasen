@@ -22,7 +22,6 @@ pub fn construct_type(ty: Node) -> TokenStream {
     }
 }
 
-#[allow(clippy::match_same_arms)]
 fn impl_math_variant(
     (trait_id, node_id, operator): (Ident, Ident, Punct),
     left_type: Node,

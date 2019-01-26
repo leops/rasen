@@ -3,14 +3,13 @@
 use std::convert::TryFrom;
 
 pub use builder::*;
-pub use graph::*;
+pub use graph::Graph;
 pub use module::Module;
 pub use node::*;
 pub use types::*;
 
 pub use petgraph::graph::NodeIndex;
-pub use spirv_headers::BuiltIn;
-pub use spirv_headers::ExecutionModel as ShaderType;
+pub use spirv_headers::{BuiltIn, ExecutionModel as ShaderType};
 
 use errors::{Error, Result};
 

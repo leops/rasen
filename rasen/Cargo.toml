@@ -35,4 +35,4 @@ quote = "0.6.8"
 proc-macro2 = "0.4.20"
 
 [dev-dependencies]
-pretty_assertions = "0.5.1"
+insta = { git = "https://github.com/mitsuhiko/insta", rev="7432f45", version = "0.5.2" }

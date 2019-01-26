@@ -1,3 +1,9 @@
+---
+created: "2019-01-26T10:36:38.867929600+00:00"
+creator: insta@0.5.2
+expression: assembly
+source: rasen/tests/build.rs
+---
 ; SPIR-V
 ; Version: 1.1
 ; Generator: Unknown

@@ -1,3 +1,9 @@
+---
+created: "2019-01-26T12:17:44.121870400+00:00"
+creator: insta@0.5.2
+expression: assembly
+source: rasen-plugin/tests/graph.rs
+---
 ; SPIR-V
 ; Version: 1.1
 ; Generator: Unknown

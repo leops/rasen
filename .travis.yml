@@ -3,11 +3,8 @@ language: rust
 matrix:
     include:
         # - rust: stable
-        #   env: DSL_FEATURES=''
         # - rust: beta
-        #   env: DSL_FEATURES=''
         - rust: nightly
-          env: DSL_FEATURES=functions
 
 # Since this build doesn't require sudo, we can turn it off and improve build
 # performance.
@@ -19,7 +16,5 @@ cache: cargo
 
 # Run tests and benchmarks.
 script:
-    - cargo test -p rasen
-    - cargo test -p rasen-dsl --features "$DSL_FEATURES"
-    - cargo bench -p rasen
-    - cargo bench -p rasen-dsl --features "$DSL_FEATURES"
+    - cargo test
+    - cargo bench
