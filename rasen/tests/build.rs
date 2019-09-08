@@ -1,8 +1,6 @@
-#![feature(try_from)]
-
+extern crate insta;
 extern crate rasen;
 extern crate rspirv;
-extern crate insta;
 
 use rasen::prelude::*;
 

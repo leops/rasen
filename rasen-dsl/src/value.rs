@@ -1,105 +1,116 @@
 //! Definitions for the Value type
 
-use rasen::{
-    module::FunctionRef,
-    prelude::{Graph, NodeIndex},
+use std::{
+    ops::{Add, Sub, Mul, Div, Rem},
 };
 
-use std::{cell::RefMut, marker::PhantomData};
+use crate::context::{Container, execute::Execute};
 
-use module::{Module, ModuleRef};
+pub struct Value<C: Container<T> + ?Sized, T>(pub(crate) C::Value);
 
-pub(crate) type GraphRef<'a> = RefMut<'a, Graph>;
+impl<C: Container<T>, T> Copy for Value<C, T> where C::Value: Copy {}
 
-#[doc(hidden)]
-#[derive(Copy, Clone, Debug)]
-pub enum FuncKind {
-    Main,
-    Ref(FunctionRef),
-}
-
-impl FuncKind {
-    pub fn get_graph_mut<'a>(&self, module: ModuleRef<'a>) -> GraphRef<'a> {
-        match *self {
-            FuncKind::Main => RefMut::map(module, |module| {
-                // let module = shader.module.get_mut();
-                &mut module.main
-            }),
-            FuncKind::Ref(index) => RefMut::map(module, |module| {
-                // let module = shader.module.get_mut();
-                &mut module[index]
-            }),
-        }
+impl<C: Container<T>, T> Clone for Value<C, T>
+where
+    C::Value: Clone,
+{
+    fn clone(&self) -> Self {
+        Value(self.0.clone())
     }
 }
 
-/// Representation of a shader value
-#[derive(Clone, Debug)]
-pub enum Value<T> {
-    /// Value backed by actual data
-    Concrete(T),
-    /// Reference to a node in the graph
-    Abstract {
-        module: Module,
-        function: FuncKind,
-        index: NodeIndex<u32>,
-        ty: PhantomData<T>,
-    },
-}
+impl<T: Copy> Value<Execute, T>
+where
+    Execute: Container<T, Value = T>,
+{
+    pub fn of(value: T) -> Self {
+        Value(value)
+    }
 
-impl<T> Value<T> {
-    #[doc(hidden)]
-    pub fn get_module(&self) -> Option<Module> {
-        match *self {
-            Value::Concrete(_) => None,
-            Value::Abstract { ref module, .. } => Some(module.clone()),
-        }
+    pub fn read(self) -> T {
+        self.0
     }
 }
 
-/// Trait implemented by any type the DSL considers the be a "value" (including the Value enum itself)
-#[allow(clippy::module_name_repetitions)]
-pub trait IntoValue {
+impl<C, T, R> Add<Value<C, R>> for Value<C, T>
+where
+    T: Add<R>,
+    R: Copy,
+    T::Output: Copy,
+    C: Container<T> + Container<R> + Container<T::Output>,
+{
+    type Output = Value<C, T::Output>;
+    fn add(self, rhs: Value<C, R>) -> Self::Output {
+        C::add(self, rhs)
+    }
+}
+
+impl<C, T, R> Sub<Value<C, R>> for Value<C, T>
+where
+    T: Sub<R>,
+    R: Copy,
+    T::Output: Copy,
+    C: Container<T> + Container<R> + Container<T::Output>,
+{
+    type Output = Value<C, T::Output>;
+    fn sub(self, rhs: Value<C, R>) -> Self::Output {
+        C::sub(self, rhs)
+    }
+}
+
+impl<C, T, R> Mul<Value<C, R>> for Value<C, T>
+where
+    T: Mul<R>,
+    R: Copy,
+    T::Output: Copy,
+    C: Container<T> + Container<R> + Container<T::Output>,
+{
+    type Output = Value<C, T::Output>;
+    fn mul(self, rhs: Value<C, R>) -> Self::Output {
+        C::mul(self, rhs)
+    }
+}
+
+impl<C, T, R> Div<Value<C, R>> for Value<C, T>
+where
+    T: Div<R>,
+    R: Copy,
+    T::Output: Copy,
+    C: Container<T> + Container<R> + Container<T::Output>,
+{
+    type Output = Value<C, T::Output>;
+    fn div(self, rhs: Value<C, R>) -> Self::Output {
+        C::div(self, rhs)
+    }
+}
+
+impl<C, T, R> Rem<Value<C, R>> for Value<C, T>
+where
+    T: Rem<R>,
+    R: Copy,
+    T::Output: Copy,
+    C: Container<T> + Container<R> + Container<T::Output>,
+{
+    type Output = Value<C, T::Output>;
+    fn rem(self, rhs: Value<C, R>) -> Self::Output {
+        C::rem(self, rhs)
+    }
+}
+
+pub trait IntoValue<C> {
     type Output;
-
-    // Convert this object into a Value object
-    fn into_value(self) -> Value<Self::Output>;
-    /// Registers this value into a Graph and returns the node index
-    fn get_index(&self, graph: GraphRef) -> NodeIndex<u32>;
+    fn into_value(self) -> Value<C, Self::Output>
+    where
+        C: Container<Self::Output>;
 }
 
-impl<T> IntoValue for Value<T>
-where
-    T: IntoValue + Clone,
-{
+impl<C: Container<T>, T> IntoValue<C> for Value<C, T> {
     type Output = T;
 
-    fn into_value(self) -> Self {
+    fn into_value(self) -> Value<C, T>
+    where
+        C: Container<T>,
+    {
         self
-    }
-
-    fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
-        match *self {
-            Value::Concrete(ref v) => v.get_index(graph),
-            Value::Abstract { index, .. } => index,
-        }
-    }
-}
-
-impl<'a, T> IntoValue for &'a Value<T>
-where
-    T: IntoValue + Clone,
-{
-    type Output = T;
-
-    fn into_value(self) -> Value<T> {
-        self.clone()
-    }
-
-    fn get_index(&self, graph: GraphRef) -> NodeIndex<u32> {
-        match **self {
-            Value::Concrete(ref v) => v.get_index(graph),
-            Value::Abstract { index, .. } => index,
-        }
     }
 }

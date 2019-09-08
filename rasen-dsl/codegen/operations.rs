@@ -1,364 +1,1057 @@
 //! GLSL Operation declarations
 
+use std::collections::{HashMap, hash_map::Entry};
 use proc_macro2::{Ident, Span, TokenStream};
+
+enum Generic {
+    Container,
+    Other(char),
+}
+
+impl Generic {
+    fn generic(&self) -> Option<char> {
+        match self {
+            Generic::Container => None,
+            Generic::Other(gen) => Some(*gen),
+        }
+    }
+    
+    fn tokens(&self) -> TokenStream {
+        match self {
+            Generic::Container => {
+                quote! { T }
+            },
+            Generic::Other(gen) => {
+                let name = Ident::new(&gen.to_string(), Span::call_site());
+                quote! { #name }
+            },
+        }
+    }
+}
+
+enum ArgType {
+    Generic(Generic),
+    Value(Box<ArgType>),
+    Associated {
+        generic: Generic,
+        trait_: TokenStream,
+        name: &'static str,
+    },
+}
+
+impl ArgType {
+    fn generic(&self) -> Option<char> {
+        match self {
+            ArgType::Generic(gen) => gen.generic(),
+            ArgType::Value(inner) => inner.generic(),
+            ArgType::Associated { generic, .. } => generic.generic(),
+        }
+    }
+
+    fn tokens(&self, is_trait: bool, is_ret: bool) -> TokenStream {
+        match self {
+            ArgType::Generic(gen) => {
+                gen.tokens()
+            },
+            ArgType::Value(inner) => {
+                let inner = inner.tokens(is_trait, is_ret);
+                let ctx = if is_trait {
+                    quote! { Self }
+                } else {
+                    quote! { C }
+                };
+
+                if is_trait || is_ret {
+                    quote! { Value<#ctx, #inner> }
+                } else {
+                    quote! { impl IntoValue<#ctx, Output = #inner> }
+                }
+            }
+            ArgType::Associated { generic, trait_, name } => {
+                let generic = generic.tokens();
+                let name = Ident::new(name, Span::call_site());
+                quote! { <#generic as #trait_>::#name }
+            }
+        }
+    }
+
+    fn constraints(&self, context: &Context) -> Constraints {
+        match self {
+            ArgType::Value(inner) => {
+                let tokens = inner.tokens(context.is_trait(), true);
+
+                let mut inner = inner.constraints(context);
+                inner.add(
+                    quote! { #tokens },
+                    quote! { Copy },
+                );
+
+                match context {
+                    Context::Trait => inner.add(quote! { Self }, quote! { Container<#tokens> }),
+                    Context::Func => inner.add(quote! { C }, quote! { Container<#tokens> }),
+                    _ => {}
+                }
+
+                inner
+            }
+
+            ArgType::Associated { generic, trait_, .. } => {
+                let generic = generic.tokens();
+                Constraints::of(
+                    quote! { #generic },
+                    trait_.clone(),
+                )
+            }
+
+            _ => Constraints::default(),
+        }
+    }
+}
+
+struct Argument {
+    name: &'static str,
+    ty: ArgType,
+}
+
+#[derive(Hash, Eq, PartialEq)]
+enum Context {
+    Trait,
+    Parse,
+    Execute,
+    Func,
+}
+
+impl Context {
+    fn is_trait(&self) -> bool {
+        if let Context::Func = self {
+            false
+        } else {
+            true
+        }
+    }
+}
+
+struct Constraint {
+    key: TokenStream,
+    values: Vec<TokenStream>,
+}
+
+#[derive(Default)]
+struct Constraints {
+    inner: HashMap<String, Constraint>,
+}
+
+impl Constraints {
+    fn of(key: TokenStream, value: TokenStream) -> Self {
+        let mut inner = HashMap::new();
+        inner.insert(key.to_string(), Constraint { key, values: vec![value] });
+        Constraints { inner }
+    }
+
+    fn add(&mut self, key: TokenStream, value: TokenStream) {
+        self.inner
+            .entry(key.to_string())
+            .or_insert_with(|| Constraint {
+                key: key.clone(),
+                values: Vec::new(),
+            })
+            .values
+            .push(value);
+    }
+
+    fn extend(&mut self, other: Constraints) {
+        for (key, value) in other.inner {
+            match self.inner.entry(key) {
+                Entry::Occupied(mut entry) => {
+                    let entry = entry.get_mut();
+                    entry.values.extend(value.values);
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(value);
+                }
+            }
+        }
+    }
+}
 
 fn operation(
     name: &str,
-    args: u32,
-    adnl_generics: &[&str],
-    constraints: &TokenStream,
-    implementation: &TokenStream,
-) -> TokenStream {
-    let node = Ident::new(&name, Span::call_site());
-    let fn_name = Ident::new(&name.to_lowercase(), Span::call_site());
-    let indices: Vec<u32> = (0..args).collect();
-    let mut generics: Vec<_> = {
-        indices
-            .iter()
-            .map(|i| Ident::new(&format!("T{}", i), Span::call_site()))
-            .collect()
-    };
-    let args: Vec<Ident> = {
-        indices
-            .iter()
-            .map(|i| Ident::new(&format!("arg_{}", i), Span::call_site()))
-            .collect()
-    };
-    let arg_list: Vec<_> = {
-        args.iter()
-            .zip(generics.iter())
-            .map(|(arg, ty)| quote! { #arg: #ty })
-            .collect()
-    };
+    args: &[Argument],
+    result: ArgType,
+    constraint_list: &[Constraint],
+    node: TokenStream,
+    edges: &[&str],
+    implementation: TokenStream,
+) -> [TokenStream; 4] {
+    let fn_name = Ident::new(name, Span::call_site());
 
-    let args2 = args.clone();
+    let mut output = [
+        TokenStream::new(),
+        TokenStream::new(),
+        TokenStream::new(),
+        TokenStream::new(),
+    ];
 
-    for gen in adnl_generics {
-        generics.push(Ident::new(gen, Span::call_site()));
-    }
+    let generics: Vec<_> = args.into_iter()
+        .filter_map(|arg| 
+            arg.ty.generic().map(|name|
+                Ident::new(&name.to_string(), Span::call_site())
+            )
+        )
+        .collect();
 
-    let method_impl = match_values(
-        &args,
-        implementation,
-        quote! {
-            let index = graph.add_node(Node::#node);
-            #( graph.add_edge(#args2, index, #indices); )*
-            index
-        },
-    );
+    for (index, context) in [Context::Trait, Context::Parse, Context::Execute, Context::Func].iter().enumerate() {
+        let generics = generics.clone();
 
-    quote! {
-        #[allow(unused_variables)]
-        pub fn #fn_name< #( #generics , )* R >( #( #arg_list ),* ) -> Value<R> #constraints {
-            #method_impl
+        let mut constraints = Constraints::default();
+        
+        for constraint in constraint_list {
+            for value in &constraint.values {
+                constraints.add(
+                    constraint.key.clone(),
+                    value.clone(),
+                );
+            }
         }
-    }
-}
 
-pub fn match_values(names: &[Ident], concrete: &TokenStream, index: TokenStream) -> TokenStream {
-    let parts = names.len();
-    let arms: Vec<_> = {
-        (0..2u32.pow(parts as u32))
-            .map(|id| {
-                if id == 0 {
-                    quote! {
-                        ( #( Value::Concrete( #names ), )* ) => {
-                            return { #concrete }
-                        },
-                    }
-                } else {
-                    let mut first_abstract = true;
-                    let (patterns, indices): (Vec<_>, Vec<_>) = {
-                        names.into_iter().enumerate()
-                            .map(move |(i, name)| {
-                                if (id >> i) & 1 == 1 {
-                                    (
-                                        if first_abstract {
-                                            first_abstract = false;
-                                            quote! { Value::Abstract { module, function, index: #name, .. } }
-                                        } else {
-                                            quote! { Value::Abstract { index: #name, .. } }
-                                        },
-                                        quote! { #name }
-                                    )
-                                } else {
-                                    (
-                                        quote! { #name @ Value::Concrete(_) },
-                                        quote! {{
-                                            let module = module.borrow_mut();
-                                            let graph = function.get_graph_mut(module);
-                                            #name.get_index(graph)
-                                        }}
-                                    )
-                                }
-                            })
-                            .unzip()
-                    };
+        for arg in args {
+            constraints.extend(arg.ty.constraints(context));
+        }
 
-                    let ident1: Vec<_> = (0..indices.len()).map(|i| Ident::new(&format!("tmp_{}", i), Span::call_site())).collect();
-                    let ident2 = ident1.clone();
+        constraints.extend(result.constraints(context));
 
-                    quote! {
-                        ( #( #patterns, )* ) => {
-                            #( let #ident1 = #indices; )*
-                            ( module, function, #( #ident2 ),* )
-                        },
-                    }
+        let constraints: Vec<_> = constraints.inner.values()
+            .map(|constraint| {
+                let key = constraint.key.clone();
+                let values = constraint.values.clone();
+                quote! { #key: #( #values )+* }
+            })
+            .collect();
+
+        let is_trait = context.is_trait();
+
+        let fn_args: Vec<_> = args.into_iter()
+            .map(|arg| {
+                let name = Ident::new(&arg.name, Span::call_site());
+                let ty = arg.ty.tokens(is_trait, false);
+                quote! {
+                    #name: #ty
                 }
             })
-            .collect()
-    };
+            .collect();
 
-    quote! {
-        let ( module, function, #( #names ),* ) = match ( #( #names.into_value(), )* ) {
-            #( #arms )*
+        let result = result.tokens(is_trait, true);
+
+        output[index] = match context {
+            Context::Trait => quote! {
+                fn #fn_name< #( #generics ),* >( #( #fn_args ),* ) -> #result where #( #constraints ),*;
+            },
+
+            Context::Parse => {
+                let edges: Vec<_> = edges.into_iter()
+                    .enumerate()
+                    .map(|(index, name)| {
+                        let ident = Ident::new(name, Span::call_site());
+                        let index = index as u32;
+
+                        quote! { graph.add_edge(#ident.0, node, #index); }
+                    })
+                    .collect();
+
+                quote! {
+                    fn #fn_name< #( #generics ),* >( #( #fn_args ),* ) -> #result where #( #constraints, )* {
+                        with_graph(|graph| {
+                            let node = graph.add_node(#node);
+                            #( #edges )*
+                            Value(node)
+                        })
+                    }
+                }
+            },
+
+            Context::Execute => {
+                let args_unwrap: Vec<_> = args.into_iter()
+                    .filter_map(|arg| {
+                        if let ArgType::Value(_) = arg.ty {
+                            let name = Ident::new(&arg.name, Span::call_site());
+                            Some(quote! { let Value(#name) = #name; })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                quote! {
+                    #[inline]
+                    fn #fn_name< #( #generics ),* >( #( #fn_args ),* ) -> #result where #( #constraints, )* {
+                        #( #args_unwrap )*
+                        Value({ #implementation })
+                    }
+                }
+            },
+
+            Context::Func => {
+                let arg_names: Vec<_> = args.into_iter()
+                    .map(|arg| {
+                        let name = Ident::new(&arg.name, Span::call_site());
+                        if let ArgType::Value(_) = arg.ty {
+                            quote! { #name.into_value() }
+                        } else {
+                            quote! { #name }
+                        }
+                    })
+                    .collect();
+
+                quote! {
+                    #[inline]
+                    pub fn #fn_name<C, T, #( #generics ),*>( #( #fn_args ),* ) -> #result where #( #constraints, )* {
+                        <C as Container<T>>::#fn_name( #( #arg_names ),* )
+                    }
+                }
+            },
         };
-
-        let index = {
-            let module = module.borrow_mut();
-            let mut graph = function.get_graph_mut(module);
-            #index
-        };
-
-        Value::Abstract {
-            module,
-            function,
-            index,
-            ty: PhantomData,
-        }
     }
+
+    output
 }
 
-pub fn impl_operations() -> Vec<TokenStream> {
-    let operations: &[(&str, u32, &[&str], TokenStream, TokenStream)] = &[
-        (
-            "Normalize", 1, &[ "S" ],
-            quote! { where T0: IntoValue<Output=R>, R: Vector<S>, S: Floating },
+pub fn impl_operations() -> Vec<[TokenStream; 4]> {
+    vec![
+        operation(
+            "index",
+            &[
+                Argument {
+                    name: "container",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "index",
+                    ty: ArgType::Generic(Generic::Other('I')),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Associated {
+                generic: Generic::Container,
+                trait_: quote! { Index<I> },
+                name: "Output",
+            })),
+            &[
+                Constraint {
+                    key: quote! { u32 },
+                    values: vec![quote! { From<I> }],
+                },
+                Constraint {
+                    key: quote! { T::Output },
+                    values: vec![quote! { Sized }],
+                },
+            ],
             quote! {
-                let count = R::component_count();
-                let length = match length(arg_0) {
-                    Value::Concrete(v) => v,
-                    _ => unreachable!(),
-                };
-                let arr: Vec<_> = (0..count).map(|i| arg_0[i] / length).collect();
-                let vec: R = arr.into();
-                vec.into()
-            }
-        ), (
-            "Dot", 2, &[ "V" ],
-            quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R>, R: Numerical },
-            quote! {
-                let count = V::component_count();
-                let val: R = (0..count).map(|i| arg_0[i] * arg_1[i]).sum();
-                val.into()
-            }
-        ), (
-            "Clamp", 3, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=R>, R: Scalar },
-            quote! {
-                let x: Value<R> = arg_0.into();
-                let min_val: Value<R> = arg_1.into();
-                let max_val: Value<R> = arg_2.into();
-                min(max(x, min_val), max_val)
-            }
-        ), (
-            "Cross", 2, &[ "S" ],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S>, S: Numerical },
-            quote! {
-                let vec: R = vec![
-                    arg_0[1] * arg_1[2] - arg_1[1] * arg_0[2],
-                    arg_0[2] * arg_1[0] - arg_1[2] * arg_0[0],
-                    arg_0[0] * arg_1[1] - arg_1[0] * arg_0[1],
-                ].into();
-                vec.into()
-            }
-        ), (
-            "Floor", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Floating },
-            quote! {
-                arg_0.floor().into()
-            }
-        ), (
-            "Ceil", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Floating },
-            quote! {
-                arg_0.ceil().into()
-            }
-        ), (
-            "Round", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Floating },
-            quote! {
-                arg_0.round().into()
-            }
-        ), (
-            "Sin", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Floating },
-            quote! {
-                arg_0.sin().into()
-            }
-        ), (
-            "Cos", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Floating },
-            quote! {
-                arg_0.cos().into()
-            }
-        ), (
-            "Tan", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Floating },
-            quote! {
-                arg_0.tan().into()
-            }
-        ), (
-            "Pow", 2, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Numerical },
-            quote! {
-                Numerical::pow(arg_0, arg_1).into()
-            }
-        ), (
-            "Min", 2, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar },
-            quote! {
-                (if arg_1 < arg_0 { arg_1 } else { arg_0 }).into()
-            }
-        ), (
-            "Max", 2, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar },
-            quote! {
-                (if arg_1 > arg_0 { arg_1 } else { arg_0 }).into()
-            }
-        ), (
-            "Length", 1, &[ "V" ],
-            quote! { where T0: IntoValue<Output=V>, V: Vector<R>, R: Floating },
-            quote! {
-                let count = V::component_count();
-                let length: R = {
-                    (0..count)
-                        .map(|i| arg_0[i] * arg_0[i])
-                        .sum()
-                };
-
-                length.sqrt().into()
-            }
-        ), (
-            "Distance", 2, &[ "V" ],
-            quote! { where T0: IntoValue<Output=V>, T1: IntoValue<Output=V>, V: Vector<R> + Sub<V, Output=V>, R: Floating },
-            quote! {
-                length(arg_0 - arg_1)
-            }
-        ), (
-            "Reflect", 2, &[ "S" ],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Vector<S> + Sub<R, Output=R>, S: Numerical + Mul<R, Output=R> },
-            quote! {
-                let res: S = match dot(arg_1, arg_0) {
-                    Value::Concrete(v) => v,
-                    _ => unreachable!(),
-                };
-                let res: S = res + res;
-                let res: R = arg_0 - res * arg_1;
-                res.into()
-            }
-        ), (
-            "Refract", 3, &[ "S" ],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, T2: IntoValue<Output=S>, R: Math + Vector<S> + Sub<R, Output=R>, S: Floating + Mul<R, Output=R> },
-            quote! {
-                let one: S = S::one();
-                let dot: S = match dot(arg_1, arg_0) {
-                    Value::Concrete(v) => v,
-                    _ => unreachable!(),
-                };
-                let k: S = one - arg_2 * arg_2 * (one - dot * dot);
-
-                let res: R = if k < S::zero() {
-                    R::zero()
-                } else {
-                    let lhs = arg_2 * arg_0;
-                    let rhs = (arg_2 * dot + k.sqrt()) * arg_1;
-                    lhs - rhs
-                };
-
-                res.into()
-            }
-        ), (
-            "Mix", 3, &[ "V0" ],
-            quote!{
-                where T0: IntoValue<Output=V0>,
-                    T1: IntoValue<Output=V0>,
-                    T2: IntoValue<Output=V0>,
-                    V0: Math + Into<Value<R>> + Clone,
-                    Value<V0>: IntoValue
+                Node::Extract(index.into())
             },
+            &["container"],
             quote! {
-                let a: V0 = V0::one() - arg_2.clone();
-                let b: V0 = arg_0 * a;
-                let c: V0 = arg_1 * arg_2;
-                let d: V0 = b + c;
-                let r: Value<R> = d.into();
-                r
-            }
-        ), (
-            "Sqrt", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Floating },
-            quote! {
-                arg_0.sqrt().into()
-            }
-        ), (
-            "Log", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Floating },
-            quote! {
-                arg_0.ln().into()
-            }
-        ), (
-            "Abs", 1, &[],
-            quote! { where T0: IntoValue<Output=R>, R: Floating },
-            quote! {
-                arg_0.abs().into()
-            }
-        ), (
-            "Smoothstep", 3, &[],
-            quote! {
-                where T0: IntoValue<Output=R>,
-                    T1: IntoValue<Output=R>,
-                    T2: IntoValue<Output=R>,
-                    R: Floating + Mul<Value<R>, Output=Value<R>> + Sub<Value<R>, Output=Value<R>>,
-                    Value<R>: Mul</*Value<R>,*/ Output=Value<R>> + Clone
+                container[index]
             },
+        ),
+        operation(
+            "normalize",
+            &[
+                Argument {
+                    name: "vector",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { VectorFloating }],
+                },
+                Constraint {
+                    key: quote! { <T as Vector>::Scalar },
+                    values: vec![quote! { Floating }],
+                },
+            ],
             quote! {
-                let t: Value<R> = clamp(
-                    (arg_2 - arg_0) / (arg_1 - arg_0),
-                    R::zero(), R::one(),
-                );
-
-                let a: Value<R> = t.clone() * t.clone();
-                let b: Value<R> = R::two() * t;
-                let c: Value<R> = R::three() - b;
-
-                a * c
+                Node::Normalize
+            },
+            &["vector"],
+            quote! {
+                vector.normalize()
             }
-        ), (
-            "Inverse", 1, &[ "V", "S" ],
-            quote! { where T0: IntoValue<Output=R>, R: Matrix<V, S>, V: Vector<S>, S: Scalar },
+        ),
+        operation(
+            "dot",
+            &[
+                Argument {
+                    name: "a",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "b",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Associated {
+                generic: Generic::Container,
+                trait_: quote! { Vector },
+                name: "Scalar",
+            })),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { VectorFloating }],
+                },
+                Constraint {
+                    key: quote! { <T as Vector>::Scalar },
+                    values: vec![quote! { Floating }],
+                },
+            ],
             quote! {
-                unimplemented!()
+                Node::Dot
+            },
+            &["a", "b"],
+            quote! {
+                a.dot(&b)
             }
-        ),  (
-            "Step", 2, &[],
-            quote! { where T0: IntoValue<Output=R>, T1: IntoValue<Output=R>, R: Scalar },
+        ),
+        operation(
+            "clamp",
+            &[
+                Argument {
+                    name: "x",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "min",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "max",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Numerical }],
+                },
+            ],
             quote! {
-                if arg_1 < arg_0 {
-                    R::zero().into()
+                Node::Clamp
+            },
+            &["x", "min", "max"],
+            quote! {
+                x.max(min).min(max)
+            }
+        ),
+        operation(
+            "cross",
+            &[
+                Argument {
+                    name: "x",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "y",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Vector3 }],
+                },
+            ],
+            quote! {
+                Node::Cross
+            },
+            &["x", "y"],
+            quote! {
+                x.cross(&y)
+            }
+        ),
+        operation(
+            "floor",
+            &[
+                Argument {
+                    name: "val",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Floating }],
+                },
+            ],
+            quote! {
+                Node::Floor
+            },
+            &["val"],
+            quote! {
+                val.floor()
+            }
+        ),
+        operation(
+            "ceil",
+            &[
+                Argument {
+                    name: "val",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Floating }],
+                },
+            ],
+            quote! {
+                Node::Ceil
+            },
+            &["val"],
+            quote! {
+                val.ceil()
+            }
+        ),
+        operation(
+            "round",
+            &[
+                Argument {
+                    name: "val",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Floating }],
+                },
+            ],
+            quote! {
+                Node::Round
+            },
+            &["val"],
+            quote! {
+                val.round()
+            }
+        ),
+        operation(
+            "sin",
+            &[
+                Argument {
+                    name: "val",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Floating }],
+                },
+            ],
+            quote! {
+                Node::Sin
+            },
+            &["val"],
+            quote! {
+                val.sin()
+            }
+        ),
+        operation(
+            "cos",
+            &[
+                Argument {
+                    name: "val",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Floating }],
+                },
+            ],
+            quote! {
+                Node::Cos
+            },
+            &["val"],
+            quote! {
+                val.cos()
+            }
+        ),
+        operation(
+            "tan",
+            &[
+                Argument {
+                    name: "val",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Floating }],
+                },
+            ],
+            quote! {
+                Node::Tan
+            },
+            &["val"],
+            quote! {
+                val.tan()
+            }
+        ),
+        operation(
+            "pow",
+            &[
+                Argument {
+                    name: "x",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "y",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Numerical }],
+                },
+            ],
+            quote! {
+                Node::Pow
+            },
+            &["x", "y"],
+            quote! {
+                x.pow(y)
+            }
+        ),
+        operation(
+            "min",
+            &[
+                Argument {
+                    name: "x",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "y",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Numerical }],
+                },
+            ],
+            quote! {
+                Node::Min
+            },
+            &["x", "y"],
+            quote! {
+                x.min(y)
+            }
+        ),
+        operation(
+            "max",
+            &[
+                Argument {
+                    name: "x",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "y",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Numerical }],
+                },
+            ],
+            quote! {
+                Node::Max
+            },
+            &["x", "y"],
+            quote! {
+                x.max(y)
+            }
+        ),
+        operation(
+            "length",
+            &[
+                Argument {
+                    name: "val",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Associated {
+                generic: Generic::Container,
+                trait_: quote! { Vector },
+                name: "Scalar",
+            })),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { VectorFloating }],
+                },
+                Constraint {
+                    key: quote! { <T as Vector>::Scalar },
+                    values: vec![quote! { Floating }],
+                },
+            ],
+            quote! {
+                Node::Length
+            },
+            &["val"],
+            quote! {
+                val.length()
+            }
+        ),
+        operation(
+            "distance",
+            &[
+                Argument {
+                    name: "x",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "y",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Associated {
+                generic: Generic::Container,
+                trait_: quote! { Vector },
+                name: "Scalar",
+            })),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { VectorFloating }, quote! { Sub<T, Output = T> }],
+                },
+                Constraint {
+                    key: quote! { <T as Vector>::Scalar },
+                    values: vec![quote! { Floating }],
+                },
+            ],
+            quote! {
+                Node::Distance
+            },
+            &["x", "y"],
+            quote! {
+                (x - y).length()
+            }
+        ),
+        operation(
+            "reflect",
+            &[
+                Argument {
+                    name: "i",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "n",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { VectorFloating }, quote! { Sub<T, Output = T> }],
+                },
+                Constraint {
+                    key: quote! { <T as Vector>::Scalar },
+                    values: vec![
+                        quote! { Floating },
+                        quote! { Add<T::Scalar, Output = T::Scalar> },
+                        quote! { Mul<T, Output = T> },
+                    ],
+                },
+            ],
+            quote! {
+                Node::Reflect
+            },
+            &["i", "n"],
+            quote! {
+                let dot = n.dot(&i);
+                i - (dot + dot) * n
+            }
+        ),
+        operation(
+            "refract",
+            &[
+                Argument {
+                    name: "i",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "n",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "eta",
+                    ty: ArgType::Value(Box::new(ArgType::Associated {
+                        generic: Generic::Container,
+                        trait_: quote! { Vector },
+                        name: "Scalar",
+                    })),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![
+                        quote! { VectorFloating },
+                        quote! { Sub<T, Output=T> },
+                    ],
+                },
+                Constraint {
+                    key: quote! { <T as Vector>::Scalar },
+                    values: vec![
+                        quote! { Floating },
+                        quote! { Add<T::Scalar, Output=T::Scalar> },
+                        quote! { Sub<T::Scalar, Output=T::Scalar> },
+                        quote! { Mul<T::Scalar, Output=T::Scalar> },
+                        quote! { Mul<T, Output=T> },
+                        quote! { PartialOrd<T::Scalar> },
+                    ],
+                },
+            ],
+            quote! {
+                Node::Refract
+            },
+            &["i", "n", "eta"],
+            quote! {
+                let one = <T::Scalar as GenType>::one();
+                let k = one - eta * eta * (one - n.dot(&i) * n.dot(&i));
+                if k < <T::Scalar as GenType>::zero() {
+                    T::zero()
                 } else {
-                    R::one().into()
+                    eta * i - (eta * n.dot(&i) + k.sqrt()) * n
                 }
             }
         ),
-    ];
-
-    operations
-        .into_iter()
-        .map(
-            |&(name, args, generics, ref constraints, ref implementation)| {
-                operation(name, args, generics, constraints, implementation)
+        operation(
+            "mix",
+            &[
+                Argument {
+                    name: "x",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "y",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "a",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![
+                        quote! { GenType },
+                        quote! { Add<T, Output = T> },
+                        quote! { Sub<T, Output = T> },
+                        quote! { Mul<T, Output = T> },
+                    ],
+                },
+            ],
+            quote! {
+                Node::Mix
             },
-        )
-        .collect()
+            &["x", "y", "a"],
+            quote! {
+                x * (T::one() - a) + y * a
+            }
+        ),
+        operation(
+            "sqrt",
+            &[
+                Argument {
+                    name: "val",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Floating }],
+                },
+            ],
+            quote! {
+                Node::Sqrt
+            },
+            &["val"],
+            quote! {
+                val.sqrt()
+            }
+        ),
+        operation(
+            "log",
+            &[
+                Argument {
+                    name: "val",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Floating }],
+                },
+            ],
+            quote! {
+                Node::Log
+            },
+            &["val"],
+            quote! {
+                val.ln()
+            }
+        ),
+        operation(
+            "abs",
+            &[
+                Argument {
+                    name: "val",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![quote! { Floating }],
+                },
+            ],
+            quote! {
+                Node::Abs
+            },
+            &["val"],
+            quote! {
+                val.abs()
+            }
+        ),
+        operation(
+            "smoothstep",
+            &[
+                Argument {
+                    name: "edge0",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "edge1",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "x",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![
+                        quote! { GenType },
+                        quote! { Add<T, Output=T> },
+                        quote! { Sub<T, Output=T> },
+                        quote! { Mul<T, Output=T> },
+                        quote! { Div<T, Output=T> },
+                    ],
+                },
+            ],
+            quote! {
+                Node::Smoothstep
+            },
+            &["edge0", "edge1", "x"],
+            quote! {
+                let two = T::one() + T::one();
+                let three = two + T::one();
+
+                let t = ((x - edge0) / (edge1 - edge0)).max(T::zero()).min(T::one());
+                t * t * (three - two * t)
+            }
+        ),
+        operation(
+            "inverse",
+            &[
+                Argument {
+                    name: "v",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![
+                        quote! { Matrix },
+                    ],
+                },
+            ],
+            quote! {
+                Node::Inverse
+            },
+            &["v"],
+            quote! {
+                v.inverse()
+            }
+        ),
+        operation(
+            "step",
+            &[
+                Argument {
+                    name: "edge",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+                Argument {
+                    name: "x",
+                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+                },
+            ],
+            ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            &[
+                Constraint {
+                    key: quote! { T },
+                    values: vec![
+                        quote! { GenType },
+                        quote! { PartialOrd<T> },
+                    ],
+                },
+            ],
+            quote! {
+                Node::Step
+            },
+            &["edge", "x"],
+            quote! {
+                if x < edge {
+                    T::zero()
+                } else {
+                    T::one()
+                }
+            }
+        ),
+    ]
 }

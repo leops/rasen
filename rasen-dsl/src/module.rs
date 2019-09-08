@@ -1,176 +1,218 @@
 //! Module builder utility
 
 use std::{
-    cell::{RefCell, RefMut},
-    convert::TryFrom,
-    ops::FnOnce,
     rc::Rc,
-    sync::atomic::{AtomicBool, Ordering},
+    cell::RefCell,
+    ops::{Fn, FnMut, FnOnce},
 };
 
-use rasen::prelude::{
-    build_program, build_program_assembly, BuiltIn, Module as CoreModule, ModuleBuilder, Node,
-    VariableName,
+use crate::{
+    context::{
+        parse::{Parse, ParseNode},
+        Container,
+    },
+    types::AsTypeName,
+    value::Value,
+};
+use rasen::{
+    module::FunctionRef,
+    prelude::{Graph, Module as ModuleImpl, Node, VariableName, BuiltIn},
 };
 
-use rasen::{errors, module::FunctionRef};
+type Shared<T> = Rc<RefCell<T>>;
+type BuilderContext = Option<(Shared<ModuleImpl>, Option<FunctionRef>)>;
 
-use value::{IntoValue, Value};
-
-pub(crate) type ModuleRef<'a> = RefMut<'a, CoreModule>;
-
-/// The Module builder, a lightweight wrapper around a shared mutable Graph
-#[derive(Clone, Debug, Default)]
-pub struct Module {
-    module: Rc<RefCell<CoreModule>>,
+thread_local! {
+    static CONTEXT: RefCell<BuilderContext> = RefCell::new(None);
 }
+
+pub(crate) fn with_graph<T>(thunk: impl FnOnce(&mut Graph) -> T) -> T {
+    CONTEXT.with(|ctx| {
+        let ctx = ctx.borrow();
+        let (module, func) = ctx
+            .as_ref()
+            .expect("Module builder called outside of Module::with");
+
+        let mut module = module.borrow_mut();
+        if let Some(func) = func {
+            thunk(&mut module[*func])
+        } else {
+            thunk(&mut module.main)
+        }
+    })
+}
+
+fn using_module<T>(push: impl FnOnce(&mut BuilderContext) -> (), code: impl FnOnce() -> (), pop: impl FnOnce(&mut BuilderContext) -> T) -> T {
+    CONTEXT.with(move |cell| {
+        let mut ctx = cell.borrow_mut();
+        push(&mut ctx as &mut BuilderContext);
+    });
+
+    code();
+
+    CONTEXT.with(move |cell| {
+        let mut ctx = cell.borrow_mut();
+        pop(&mut ctx as &mut BuilderContext)
+    })
+}
+
+pub trait IntoVariableName {
+    fn into_variable_name(self) -> VariableName;
+}
+
+impl IntoVariableName for BuiltIn {
+    fn into_variable_name(self) -> VariableName {
+        VariableName::BuiltIn(self)
+    }
+}
+
+impl IntoVariableName for String {
+    fn into_variable_name(self) -> VariableName {
+        VariableName::Named(self)
+    }
+}
+
+impl<'a> IntoVariableName for &'a str {
+    fn into_variable_name(self) -> VariableName {
+        VariableName::Named(self.into())
+    }
+}
+
+impl<T: IntoVariableName> IntoVariableName for Option<T> {
+    fn into_variable_name(self) -> VariableName {
+        if let Some(inner) = self {
+            inner.into_variable_name()
+        } else {
+            VariableName::None
+        }
+    }
+}
+
+pub struct Module;
 
 impl Module {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn build(thunk: impl FnOnce(&Self) -> ()) -> ModuleImpl {
+        let module = Rc::new(RefCell::new(
+            ModuleImpl::default()
+        ));
+
+        using_module(
+            |ctx| {
+                debug_assert!(ctx.is_none(), "Module::build called recursively");
+                *ctx = Some((module, None));
+            },
+            || {
+                thunk(&Module);
+            },
+            |ctx| {
+                let value = ctx.take();
+
+                let (module, func) = value.expect("Builder is missing in thread local key");
+                debug_assert!(func.is_none(), "Module builder unwrapped from function context");
+                
+                let module = Rc::try_unwrap(module).expect("Module builder has live references");
+                module.into_inner()
+            },
+        )
     }
 
-    pub(crate) fn borrow_mut(&self) -> ModuleRef {
-        self.module.borrow_mut()
-    }
-
-    pub fn function<F>(&self, thunk: F) -> Function<F> {
-        Function::new(self.clone(), thunk)
-    }
-
-    pub fn build<S>(&self, settings: S) -> errors::Result<Vec<u8>>
+    pub fn input<T>(&self, index: u32, name: impl IntoVariableName) -> Value<Parse, T>
     where
-        for<'a> ModuleBuilder: TryFrom<(&'a CoreModule, S), Error = errors::Error>,
+        T: AsTypeName,
+        Parse: Container<T, Value = ParseNode>,
     {
-        build_program(&self.module.borrow() as &CoreModule, settings)
+        with_graph(|graph| {
+            Value(graph.add_node(Node::Input(index, T::TYPE_NAME, name.into_variable_name())))
+        })
     }
 
-    pub fn build_assembly<S>(&self, settings: S) -> errors::Result<String>
+    pub fn uniform<T>(&self, index: u32, name: impl IntoVariableName) -> Value<Parse, T>
     where
-        for<'a> ModuleBuilder: TryFrom<(&'a CoreModule, S), Error = errors::Error>,
+        T: AsTypeName,
+        Parse: Container<T, Value = ParseNode>,
     {
-        build_program_assembly(&self.module.borrow() as &CoreModule, settings)
+        with_graph(|graph| {
+            Value(graph.add_node(Node::Uniform(index, T::TYPE_NAME, name.into_variable_name())))
+        })
     }
-}
 
-pub struct NameWrapper(pub(crate) VariableName);
-
-impl<'a> From<&'a str> for NameWrapper {
-    fn from(val: &'a str) -> Self {
-        Self(VariableName::Named(val.into()))
-    }
-}
-
-impl From<String> for NameWrapper {
-    fn from(val: String) -> Self {
-        Self(VariableName::Named(val))
-    }
-}
-
-impl From<BuiltIn> for NameWrapper {
-    fn from(val: BuiltIn) -> Self {
-        Self(VariableName::BuiltIn(val))
-    }
-}
-
-impl From<VariableName> for NameWrapper {
-    fn from(val: VariableName) -> Self {
-        Self(val)
-    }
-}
-
-impl From<Option<VariableName>> for NameWrapper {
-    fn from(val: Option<VariableName>) -> Self {
-        match val {
-            Some(val) => val.into(),
-            None => Self(VariableName::None),
-        }
-    }
-}
-
-/// Shader attribute
-pub trait Input<T> {
-    fn input<N>(&self, location: u32, name: N) -> Value<T>
+    pub fn output<T>(&self, index: u32, name: impl IntoVariableName, value: Value<Parse, T>)
     where
-        N: Into<NameWrapper>;
-}
-
-/// Shader uniform
-pub trait Uniform<T> {
-    fn uniform<N>(&self, location: u32, name: N) -> Value<T>
-    where
-        N: Into<NameWrapper>;
-}
-
-/// Shader outputs
-pub trait Output<T> {
-    fn output<N>(&self, location: u32, name: N, value: Value<T>)
-    where
-        N: Into<NameWrapper>;
-}
-
-pub struct Function<F> {
-    pub(crate) module: Module,
-    pub(crate) func: FunctionRef,
-    pub(crate) thunk: F,
-    pub(crate) built: AtomicBool,
-}
-
-impl<F: Clone> Clone for Function<F> {
-    fn clone(&self) -> Self {
-        Self {
-            module: self.module.clone(),
-            func: self.func,
-            thunk: self.thunk.clone(),
-            built: AtomicBool::new(self.built.load(Ordering::SeqCst)),
-        }
-    }
-}
-
-impl<F> Function<F> {
-    pub fn new(module: Module, thunk: F) -> Self {
-        let func = module.module.borrow_mut().add_function();
-        Self {
-            func,
-            thunk,
-            module,
-            built: AtomicBool::new(false),
-        }
-    }
-
-    pub(crate) fn ret_impl<A, R>(
-        module: &Module,
-        func: FunctionRef,
-        source: impl IntoValue<Output = R>,
-    ) where
-        F: FnOnce<A, Output = Value<R>>,
-        Value<R>: IntoValue,
+        T: AsTypeName,
+        Parse: Container<T, Value = ParseNode>,
     {
-        let src = match source.into_value() {
-            Value::Abstract { index, .. } => index,
-            source @ Value::Concrete(_) => {
-                let module = module.module.borrow_mut();
-                let mut graph = RefMut::map(module, |module| &mut module[func]);
-                source.get_index(graph)
-            }
-        };
-
-        let mut module = module.module.borrow_mut();
-        let graph = &mut module[func];
-        let sink = graph.add_node(Node::Return);
-        graph.add_edge(src, sink, 0);
+        with_graph(|graph| {
+            let node = graph.add_node(Node::Output(index, T::TYPE_NAME, name.into_variable_name()));
+            graph.add_edge(value.0, node, 0);
+        });
     }
 
-    pub fn ret<A, R>(&self, source: impl IntoValue<Output = R>)
+    pub fn function<F, A, R>(&self, function: F) -> impl Fn<A, Output = Value<Parse, R>>
     where
-        F: FnOnce<A, Output = Value<R>>,
-        Value<R>: IntoValue,
+        F: FnOnce<A, Output = Value<Parse, R>>,
+        A: FnArgs,
+        Parse: Container<R, Value = ParseNode>,
     {
-        Self::ret_impl(&self.module, self.func, source);
+        let func = using_module(
+            |ctx| {
+                if let Some((module, func)) = ctx {
+                    debug_assert!(func.is_none(), "Cannot build functions recursively");
+                    let mut module = module.borrow_mut();
+                    *func = Some(module.add_function());
+                } else {
+                    panic!("Function builder called outside of module builder");
+                }
+            },
+            || {
+                let res = function.call_once(A::create());
+                with_graph(|graph| {
+                    let node = graph.add_node(Node::Return);
+                    graph.add_edge(res.0, node, 0);
+                });
+            },
+            |ctx| {
+                if let Some((_module, func)) = ctx {
+                    let func = func.take();
+                    func.expect("Function builder unwrapped outside of function context")
+                } else {
+                    panic!("Function builder unwrapped outside of module builder")
+                }
+            },
+        );
+
+        FnWrapper(move |args: A| -> Value<Parse, R> {
+            Value(args.call(func))
+        })
     }
 }
 
-/// Function input
-pub trait Parameter<T> {
-    fn parameter(&self, location: u32) -> Value<T>;
+pub trait FnArgs {
+    fn create() -> Self;
+    fn call(self, func: FunctionRef) -> ParseNode;
+}
+
+include! {
+    concat!(env!("OUT_DIR"), "/module.rs")
+}
+
+struct FnWrapper<F>(F);
+
+impl<F: Fn<(A,)>, A> Fn<A> for FnWrapper<F> {
+    extern "rust-call" fn call(&self, args: A) -> Self::Output {
+        (self.0)(args)
+    }
+}
+
+impl<F: Fn<(A,)>, A> FnMut<A> for FnWrapper<F> {
+    extern "rust-call" fn call_mut(&mut self, args: A) -> Self::Output {
+        (self.0)(args)
+    }
+}
+
+impl<F: Fn<(A,)>, A> FnOnce<A> for FnWrapper<F> {
+    type Output = F::Output;
+
+    extern "rust-call" fn call_once(self, args: A) -> Self::Output {
+        (self.0)(args)
+    }
 }

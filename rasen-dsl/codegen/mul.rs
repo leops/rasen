@@ -1,10 +1,6 @@
 //! Mul trait implementation
 
-use codegen::{
-    defs::{Category, Node},
-    math::construct_type,
-    operations::match_values,
-};
+use codegen::defs::{Category, Type};
 use proc_macro2::{Ident, Span, TokenStream};
 
 fn impl_vector_times_scalar(
@@ -28,9 +24,9 @@ fn impl_vector_times_scalar(
     };
 
     quote! {
-        let #result( #( #v_fields ),* ) = #vector;
+        let #result([ #( #v_fields ),* ]) = #vector;
         let other = #scalar;
-        #result( #( #res_fields ),* ).into()
+        #result([ #( #res_fields ),* ])
     }
 }
 
@@ -56,36 +52,28 @@ fn impl_vector_times_matrix(
     };
 
     quote! {
-        let #result( #( #v_fields ),* ) = #vector;
+        let #result([ #( #v_fields ),* ]) = #vector;
         let matrix = #matrix;
-        #result( #( #res_fields ),* ).into()
+        #result([ #( #res_fields ),* ])
     }
 }
 
-pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<TokenStream> {
-    let left_res = left_type.result.clone();
-    let right_res = right_type.result.clone();
-
+pub fn impl_mul_variant(left_res: Type, right_res: Type) -> Option<TokenStream> {
     let (result, mul_impl) = match (
         left_res.category,
         left_res.ty,
         right_res.category,
         right_res.ty,
     ) {
-        (_, "bool", _, _) | (_, _, _, "bool") => return None,
-
-        (Category::SCALAR, _, Category::SCALAR, _)
-            if !left_type.is_value() && !right_type.is_value() =>
-        {
-            return None
-        }
+        (_, "bool", _, _) | (_, _, _, "bool") |
+        (Category::SCALAR, _, Category::SCALAR, _) => return None,
 
         (lc, lt, rc, rt) if lc == rc && lt == rt && left_res.size == right_res.size => (
             left_res.name.clone(),
             match lc {
                 Category::SCALAR => {
                     quote! {
-                        (lhs * rhs).into()
+                        (self * rhs)
                     }
                 }
                 Category::VECTOR => {
@@ -111,9 +99,9 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<TokenStream
                     };
 
                     quote! {
-                        let #result( #( #l_fields ),* ) = lhs;
-                        let #result( #( #r_fields ),* ) = rhs;
-                        #result( #( #res_fields ),* ).into()
+                        let #result([ #( #l_fields ),* ]) = self;
+                        let #result([ #( #r_fields ),* ]) = rhs;
+                        #result([ #( #res_fields ),* ])
                     }
                 }
                 Category::MATRIX => {
@@ -138,9 +126,9 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<TokenStream
                     };
 
                     quote! {
-                        let left_mat = lhs.0;
+                        let left_mat = self.0;
                         let right_mat = rhs.0;
-                        #result( [ #( #res_fields, )* ] ).into()
+                        #result([ #( #res_fields, )* ])
                     }
                 }
             },
@@ -156,13 +144,13 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<TokenStream
                     Category::SCALAR => impl_vector_times_scalar(
                         left_res.name.clone(),
                         left_res.size.unwrap(),
-                        quote! { lhs },
+                        quote! { self },
                         quote! { rhs },
                     ),
                     Category::MATRIX => impl_vector_times_matrix(
                         left_res.name.clone(),
                         left_res.size.unwrap(),
-                        quote! { lhs },
+                        quote! { self },
                         quote! { rhs.0 },
                     ),
                 },
@@ -179,13 +167,13 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<TokenStream
                         right_res.name.clone(),
                         right_res.size.unwrap(),
                         quote! { rhs },
-                        quote! { lhs },
+                        quote! { self },
                     ),
                     Category::MATRIX => impl_vector_times_matrix(
                         right_res.name.clone(),
                         right_res.size.unwrap(),
                         quote! { rhs },
-                        quote! { lhs.0 },
+                        quote! { self.0 },
                     ),
                 },
             )
@@ -194,47 +182,17 @@ pub fn impl_mul_variant(left_type: Node, right_type: Node) -> Option<TokenStream
         _ => return None,
     };
 
-    let is_raw = !left_type.is_value() && !right_type.is_value();
-    let left_type = construct_type(left_type);
-    let right_type = construct_type(right_type);
+    let left_type = left_res.name.clone();
+    let right_type = right_res.name.clone();
 
-    if is_raw {
-        Some(quote! {
-            impl Mul<#right_type> for #left_type {
-                type Output = #result;
+    Some(quote! {
+        impl Mul<#right_type> for #left_type {
+            type Output = #result;
 
-                #[inline]
-                fn mul(self, rhs: #right_type) -> Self::Output {
-                    let lhs = self;
-                    #mul_impl
-                }
+            #[inline]
+            fn mul(self, rhs: #right_type) -> Self::Output {
+                #mul_impl
             }
-        })
-    } else {
-        let func_impl = match_values(
-            &[
-                Ident::new("lhs", Span::call_site()),
-                Ident::new("rhs", Span::call_site()),
-            ],
-            &mul_impl,
-            quote! {
-                let index = graph.add_node(Node::Multiply);
-                graph.add_edge(lhs, index, 0);
-                graph.add_edge(rhs, index, 1);
-                index
-            },
-        );
-
-        Some(quote! {
-            impl Mul<#right_type> for #left_type {
-                type Output = Value<#result>;
-
-                #[inline]
-                fn mul(self, rhs: #right_type) -> Self::Output {
-                    let lhs = self;
-                    #func_impl
-                }
-            }
-        })
-    }
+        }
+    })
 }

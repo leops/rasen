@@ -15,7 +15,7 @@ use module::FunctionRef;
 use types::{TypeName, TypedValue};
 
 pub(crate) struct Builder<'a> {
-    module: &'a mut BuilderTrait,
+    module: &'a mut dyn BuilderTrait,
     results: HashMap<NodeIndex<Word>, (&'static TypeName, Word)>,
 
     id: Word,
@@ -25,7 +25,7 @@ pub(crate) struct Builder<'a> {
 }
 
 impl<'a> Builder<'a> {
-    pub fn new(module: &'a mut BuilderTrait) -> Builder<'a> {
+    pub fn new(module: &'a mut dyn BuilderTrait) -> Builder<'a> {
         let id = module.get_id();
         Builder {
             module,

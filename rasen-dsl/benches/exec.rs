@@ -16,7 +16,7 @@ fn bench_run_basic_frag(b: &mut Bencher) {
         basic_frag(
             vec3(0.0f32, 1.0f32, 0.0f32),
             vec2(0.0f32, 0.0f32),
-            Value::Concrete(Sampler(Vec4(0.25f32, 0.625f32, 1.0f32, 1.0f32))),
+            Value::of(Sampler(Vec4([0.25f32, 0.625f32, 1.0f32, 1.0f32]))),
         );
     });
 }
@@ -54,9 +54,9 @@ fn bench_run_basic_vert(b: &mut Bencher) {
             a_pos,
             a_normal,
             a_uv,
-            projection.into(),
-            view.into(),
-            model.into(),
+            Value::of(projection),
+            Value::of(view),
+            Value::of(model),
         )
     });
 }
@@ -64,6 +64,6 @@ fn bench_run_basic_vert(b: &mut Bencher) {
 #[bench]
 fn bench_run_functions(b: &mut Bencher) {
     b.iter(|| {
-        functions(PI.into());
+        functions(Value::of(PI));
     });
 }

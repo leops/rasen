@@ -2,225 +2,140 @@
 
 use codegen::{
     defs::{all_types, Category, Type},
-    operations::match_values,
 };
-use proc_macro2::{Ident, Literal, Span, TokenStream, TokenTree};
+use proc_macro2::{Ident, Span, TokenStream};
 
-fn trait_scalar(name: Ident, ty: Ident, (zero, one): (TokenTree, TokenTree)) -> TokenStream {
-    quote! {
-        impl Base for #name {
-            fn zero() -> Self { #zero }
-            fn one() -> Self { #one }
-        }
+fn type_scalar(name: &Ident, kind: &'static str) -> [TokenStream; 5] {
+    let upper = Ident::new(&name.to_string().to_uppercase(), Span::call_site());
+    let lower = Ident::new(&name.to_string().to_lowercase(), Span::call_site());
+    let ty = Ident::new(kind, Span::call_site());
 
-        impl Scalar for #name {}
+    let mut traits = Vec::new();
 
-        impl ValueIter<#ty> for #name {
-            type Iter = ::std::iter::Once<Value<#ty>>;
-            fn iter(obj: &Self) -> Self::Iter {
-                ::std::iter::once(obj.into())
-            }
-        }
-    }
-}
+    match kind {
+        "bool" => {},
 
-fn trait_numerical(name: Ident, pow_fn: Ident, pow_ty: Ident) -> TokenStream {
-    quote! {
-        impl Math for #name {}
+        "i32" => {
+            traits.push(quote! {
+                impl GenType for #name {
+                    #[inline]
+                    fn zero() -> Self { 0 }
+                    #[inline]
+                    fn one() -> Self { 1 }
+                    #[inline]
+                    fn min(self, rhs: Self) -> Self { std::cmp::Ord::min(self, rhs) }
+                    #[inline]
+                    fn max(self, rhs: Self) -> Self { std::cmp::Ord::max(self, rhs) }
+                }
 
-        impl Numerical for #name {
-            #[allow(clippy::cast_sign_loss)]
-            fn pow(x: Self, y: Self) -> Self { x.#pow_fn(y as #pow_ty) }
-        }
-    }
-}
+                impl Numerical for #name {
+                    #[inline]
+                    fn pow(self, rhs: Self) -> Self { self.pow(std::convert::TryInto::try_into(rhs).unwrap()) }
+                }
+            });
+        },
+        "u32" => {
+            traits.push(quote! {
+                impl GenType for #name {
+                    #[inline]
+                    fn zero() -> Self { 0 }
+                    #[inline]
+                    fn one() -> Self { 1 }
+                    #[inline]
+                    fn min(self, rhs: Self) -> Self { std::cmp::Ord::min(self, rhs) }
+                    #[inline]
+                    fn max(self, rhs: Self) -> Self { std::cmp::Ord::max(self, rhs) }
+                }
 
-fn trait_integer(name: Ident, is_signed: bool) -> TokenStream {
-    quote! {
-        impl Integer for #name {
-            fn is_signed() -> bool { #is_signed }
-        }
-    }
-}
+                impl Numerical for #name {
+                    #[inline]
+                    fn pow(self, rhs: Self) -> Self { self.pow(rhs) }
+                }
+            });
+        },
 
-fn trait_float(name: Ident, is_double: bool) -> TokenStream {
-    quote! {
-        impl Floating for #name {
-            fn is_double() -> bool { #is_double }
-            fn sqrt(self) -> Self { self.sqrt() }
-            fn floor(self) -> Self { self.floor() }
-            fn ceil(self) -> Self { self.ceil() }
-            fn round(self) -> Self { self.round() }
-            fn sin(self) -> Self { self.sin() }
-            fn cos(self) -> Self { self.cos() }
-            fn tan(self) -> Self { self.tan() }
-            fn ln(self) -> Self { self.ln() }
-            fn abs(self) -> Self { self.abs() }
-            fn two() -> Self { 2.0 }
-            fn three() -> Self { 3.0 }
-        }
-    }
-}
+        _ => {
+            traits.push(quote! {
+                impl GenType for #name {
+                    #[inline]
+                    fn zero() -> Self { 0.0 }
+                    #[inline]
+                    fn one() -> Self { 1.0 }
+                    #[inline]
+                    fn min(self, rhs: Self) -> Self { self.min(rhs) }
+                    #[inline]
+                    fn max(self, rhs: Self) -> Self { self.max(rhs) }
+                }
 
-fn trait_vector(
-    name: Ident,
-    component_count: u32,
-    component_type: Ident,
-    (zero, one): (TokenTree, TokenTree),
-) -> TokenStream {
-    let fields_zero: Vec<_> = (0..component_count).map(|_| zero.clone()).collect();
-    let fields_one: Vec<_> = (0..component_count).map(|_| one.clone()).collect();
-    let obj_fields: Vec<_> = {
-        (0..component_count)
-            .map(|i| {
-                let idx = Literal::u32_unsuffixed(i);
-                quote! { obj.#idx.into() }
-            })
-            .collect()
-    };
+                impl Numerical for #name {
+                    #[inline]
+                    fn pow(self, rhs: Self) -> Self { self.powf(rhs) }
+                }
 
-    let math = if component_type == "Bool" {
-        quote!{}
-    } else {
-        quote! {
-            impl Math for #name {}
-        }
-    };
-
-    quote! {
-        impl Base for #name {
-            fn zero() -> Self { #name( #( #fields_zero ),* ) }
-            fn one() -> Self { #name( #( #fields_one ),* ) }
-        }
-
-        #math
-
-        impl Vector<#component_type> for #name {
-            fn component_count() -> u32 { #component_count }
-        }
-
-        impl ValueIter<#component_type> for #name {
-            type Iter = ::std::vec::IntoIter<Value<#component_type>>;
-            fn iter(obj: &Self) -> Self::Iter {
-                vec![ #( #obj_fields ),* ].into_iter()
-            }
+                impl Floating for #name {
+                    #[inline]
+                    fn sqrt(self) -> Self { self.sqrt() }
+                    #[inline]
+                    fn floor(self) -> Self { self.floor() }
+                    #[inline]
+                    fn ceil(self) -> Self { self.ceil() }
+                    #[inline]
+                    fn round(self) -> Self { self.round() }
+                    #[inline]
+                    fn sin(self) -> Self { self.sin() }
+                    #[inline]
+                    fn cos(self) -> Self { self.cos() }
+                    #[inline]
+                    fn tan(self) -> Self { self.tan() }
+                    #[inline]
+                    fn ln(self) -> Self { self.ln() }
+                    #[inline]
+                    fn abs(self) -> Self { self.abs() }
+                }
+            });
         }
     }
-}
 
-fn trait_matrix(
-    name: Ident,
-    column_count: u32,
-    column_type: Ident,
-    scalar_type: Ident,
-    (zero, one): (TokenTree, TokenTree),
-) -> TokenStream {
-    let identity: Vec<TokenTree> = {
-        (0..column_count)
-            .flat_map(|x| {
-                (0..column_count)
-                    .map(|y| if x == y { one.clone() } else { zero.clone() })
-                    .collect::<Vec<_>>()
-            })
-            .collect()
-    };
-
-    quote! {
-        impl Matrix<#column_type, #scalar_type> for #name {
-            fn identity() -> Self { #name( [ #( #identity, )* ] ) }
-            fn column_count() -> u32 { #column_count }
-        }
-
-        impl ValueIter<#scalar_type> for #name {
-            type Iter = ::std::vec::IntoIter<Value<#scalar_type>>;
-            fn iter(obj: &Self) -> Self::Iter {
-                let lst: Vec<_> = obj.0.into_iter().map(|s| s.into()).collect();
-                lst.into_iter()
-            }
-        }
-    }
-}
-
-fn type_values(ty: &str) -> (TokenTree, TokenTree) {
-    match ty {
-        "bool" => (
-            TokenTree::Ident(Ident::new("false", Span::call_site())),
-            TokenTree::Ident(Ident::new("true", Span::call_site())),
-        ),
-
-        "i32" | "u32" => (
-            TokenTree::Literal(Literal::u8_unsuffixed(0)),
-            TokenTree::Literal(Literal::u8_unsuffixed(1)),
-        ),
-
-        "f32" | "f64" => (
-            TokenTree::Literal(Literal::f32_unsuffixed(0.0)),
-            TokenTree::Literal(Literal::f32_unsuffixed(1.0)),
-        ),
-
-        _ => unreachable!(),
-    }
-}
-
-fn type_scalar(name: &Ident, ty: &'static str) -> TokenStream {
-    let mut traits = vec![trait_scalar(
-        name.clone(),
-        Ident::new(ty, Span::call_site()),
-        type_values(ty),
-    )];
-
-    match ty {
-        "bool" => {}
-
-        "i32" | "u32" => {
-            traits.push(trait_numerical(
-                name.clone(),
-                Ident::new("pow", Span::call_site()),
-                Ident::new("u32", Span::call_site()),
-            ));
-            traits.push(trait_integer(name.clone(), ty == "i32"));
-        }
-
-        "f32" | "f64" => {
-            traits.push(trait_numerical(
-                name.clone(),
-                Ident::new("powf", Span::call_site()),
-                Ident::new(ty, Span::call_site()),
-            ));
-            traits.push(trait_float(name.clone(), ty == "f64"));
-        }
-
-        _ => unreachable!(),
-    }
-
-    let ty = Ident::new(ty, Span::call_site());
-    quote! {
+    let value = quote! {
         pub type #name = #ty;
+
+        impl AsTypeName for #name {
+            const TYPE_NAME: &'static TypeName = TypeName::#upper;
+        }
+
+        impl<C: Container<#name>> IntoValue<C> for #name {
+            type Output = #name;
+
+            #[inline]
+            fn into_value(self) -> Value<C, #name> {
+                C::#lower(self)
+            }
+        }
+
         #( #traits )*
+    };
 
-        impl Into<Value<#name>> for #name {
-            fn into(self) -> Value<Self> {
-                Value::Concrete(self)
-            }
+    let container = quote! {
+        fn #lower(value: #name) -> Value<Self, #name>
+        where
+            Self: Container<#name>;
+    };
+    let context = quote! {
+        Container<#name>
+    };
+    let parse = quote! {
+        fn #lower(value: #name) -> Value<Self, #name> {
+            with_graph(|graph| Value(graph.add_node(Node::Constant(TypedValue::#name(value)))))
         }
-        impl<'a> Into<Value<#name>> for &'a #name {
-            fn into(self) -> Value<#name> {
-                Value::Concrete(*self)
-            }
+    };
+    let execute = quote! {
+        #[inline]
+        fn #lower(value: #name) -> Value<Self, #name> {
+            Value(value)
         }
+    };
 
-        impl IntoValue for #name {
-            type Output = Self;
-
-            fn into_value(self) -> Value<Self> {
-                Value::Concrete(self)
-            }
-
-            fn get_index(&self, mut graph: GraphRef) -> NodeIndex<u32> {
-                graph.add_node(Node::Constant(TypedValue::#name(*self)))
-            }
-        }
-    }
+    [value, container, context, parse, execute]
 }
 
 fn type_vector(
@@ -228,113 +143,209 @@ fn type_vector(
     ty: &'static str,
     component: Option<Box<Type>>,
     size: Option<u32>,
-) -> TokenStream {
+) -> [TokenStream; 5] {
     let component = component.unwrap();
-    let size = size.unwrap();
+    let comp = component.name.clone();
+    let size = size.unwrap() as usize;
 
-    let traits = vec![trait_vector(
-        name.clone(),
-        size,
-        component.name.clone(),
-        type_values(ty),
-    )];
-
+    let kind = ty;
     let ty = Ident::new(ty, Span::call_site());
-    let types = (0..size).map(|_| ty.clone());
-
-    let fields = (0..size).map(|i| {
-        let id = Literal::u32_unsuffixed(i);
-        quote! { self.#id }
-    });
-
-    let into_idx: Vec<_> = {
-        (0..size)
-            .map(|i| {
-                let index = i as usize;
-                quote! { arr[#index] }
-            })
-            .collect()
-    };
-
-    let index_arms = (0..size).map(|i| {
-        let index = Literal::u32_unsuffixed(i);
-        quote! { #i => &self.#index }
-    });
 
     let lower = Ident::new(&name.to_string().to_lowercase(), Span::call_site());
     let upper = Ident::new(&name.to_string().to_uppercase(), Span::call_site());
-    let indices: Vec<u32> = (0..size).collect();
+
     let args1: Vec<_> = (0..size)
         .map(|i| Ident::new(&format!("arg_{}", i), Span::call_site()))
         .collect();
     let args2 = args1.clone();
-    let args3 = args1.clone();
+
+    let parse_edges: Vec<_> = args1.iter()
+        .enumerate()
+        .map(|(index, ident)| {
+            let ident = ident.clone();
+            let index = index as u32;
+            quote! { graph.add_edge(#ident.0, node, #index); }
+        })
+        .collect();
+
+    let container_args: Vec<_> = {
+        args1
+            .iter()
+            .map(|name| {
+                let comp = comp.clone();
+                quote! { #name: Value<Self, #comp> }
+            })
+            .collect()
+    };
     let arg_list: Vec<_> = {
         args1
             .iter()
             .map(|name| {
-                let comp = component.name.clone();
-                quote! { #name: impl IntoValue<Output=#comp> }
+                let comp = comp.clone();
+                quote! { #name: impl IntoValue<C, Output=#comp> }
             })
             .collect()
     };
+    {}
 
-    let func_impl = match_values(
-        &args1,
-        &quote! {
-            Value::Concrete(#name( #( #args3 ),* ))
-        },
-        quote! {
-            let index = graph.add_node(Node::Construct(TypeName::#upper));
-            #( graph.add_edge(#args2, index, #indices); )*
-            index
-        },
-    );
+    let mut traits = Vec::new();
 
-    quote! {
-        #[derive(Copy, Clone, Debug)]
-        pub struct #name( #( pub #types ),* );
-        #( #traits )*
+    if kind != "bool" {
+        let values: Vec<_> = (0..size).map(|_| quote! { v }).collect();
 
-        impl From<Vec<#ty>> for #name {
-            fn from(arr: Vec<#ty>) -> Self {
-                #name( #( #into_idx ),* )
+        let self1: Vec<_> = (0..size)
+            .map(|i| {
+                let i = i as usize;
+                quote! { self.0[#i] }
+            })
+            .collect();
+        let rhs1: Vec<_> = (0..size)
+            .map(|i| {
+                let i = i as usize;
+                quote! { rhs.0[#i] }
+            })
+            .collect();
+
+        let self2 = self1.clone();
+        let rhs2 = rhs1.clone();
+
+        traits.push(quote! {
+            impl GenType for #name {
+                #[inline]
+                fn zero() -> Self {
+                    Self::spread(#ty::zero())
+                }
+                #[inline]
+                fn one() -> Self {
+                    Self::spread(#ty::one())
+                }
+                #[inline]
+                fn min(self, rhs: Self) -> Self {
+                    #name([ #( GenType::min(#self1, #rhs1) ),* ])
+                }
+                #[inline]
+                fn max(self, rhs: Self) -> Self {
+                    #name([ #( GenType::max(#self2, #rhs2) ),* ])
+                }
             }
+
+            impl Vector for #name {
+                type Scalar = #ty;
+
+                #[inline]
+                fn spread(v: #ty) -> Self {
+                    #name([ #( #values ),* ])
+                }
+            }
+        });
+
+        if kind != "i32" && kind != "u32" {
+            let rhs_fields1: Vec<_> = (0..size)
+                .map(|index| {
+                    let index = index as usize;
+                    quote! { rhs.0[#index] }
+                })
+                .collect();
+
+            let fields1: Vec<_> = (0..size)
+                .map(|index| {
+                    let index = index as usize;
+                    quote! { self.0[#index] }
+                })
+                .collect();
+
+            let fields2 = fields1.clone();
+            let fields3 = fields1.clone();
+
+            if size == 3 {
+                traits.push(quote! {
+                    impl Vector3 for #name {
+                        fn cross(&self, rhs: &Self) -> Self {
+                            let #name(arg_0) = self;
+                            let #name(arg_1) = rhs;
+
+                            #name([
+                                arg_0[1] * arg_1[2] - arg_1[1] * arg_0[2],
+                                arg_0[2] * arg_1[0] - arg_1[2] * arg_0[0],
+                                arg_0[0] * arg_1[1] - arg_1[0] * arg_0[1],
+                            ])
+                        }
+                    }
+                });
+            }
+
+            traits.push(quote! {
+                impl VectorFloating for #name {
+                    fn normalize(&self) -> Self {
+                        let length = self.length();
+                        #name([ #( #fields1 / length ),* ])
+                    }
+
+                    fn dot(&self, rhs: &Self) -> Self::Scalar {
+                        #( #rhs_fields1 * #fields2 )+*
+                    }
+
+                    fn length_squared(&self) -> Self::Scalar {
+                        #( #fields3.powi(2) )+*
+                    }
+                }
+            });
+        }
+    }
+
+    let value = quote! {
+        #[derive(Copy, Clone, Debug)]
+        pub struct #name( pub [ #ty ; #size ] );
+
+        impl AsTypeName for #name {
+            const TYPE_NAME: &'static TypeName = TypeName::#upper;
         }
 
         impl Index<u32> for #name {
             type Output = #ty;
+
             fn index(&self, index: u32) -> &Self::Output {
-                match index {
-                    #( #index_arms, )*
-                    _ => unreachable!(),
-                }
+                &self.0[index as usize]
             }
         }
 
-        impl Into<Value<#name>> for #name {
-            fn into(self) -> Value<Self> {
-                Value::Concrete(self)
-            }
-        }
-
-        impl IntoValue for #name {
-            type Output = Self;
-
-            fn into_value(self) -> Value<Self> {
-                Value::Concrete(self)
-            }
-
-            fn get_index(&self, mut graph: GraphRef) -> NodeIndex<u32> {
-                graph.add_node(Node::Constant(TypedValue::#name( #( #fields ),* )))
-            }
-        }
+        #( #traits )*
 
         #[inline]
-        pub fn #lower( #( #arg_list ),* ) -> Value<#name> {
-            #func_impl
+        pub fn #lower<C: Context>( #( #arg_list ),* ) -> Value<C, #name> {
+            <C as Container<#name>>::#lower( #( #args1.into_value() ),* )
         }
-    }
+    };
+
+    let parse_args = container_args.clone();
+    let execute_args = container_args.clone();
+
+    let container = quote! {
+        fn #lower( #( #container_args ),* ) -> Value<Self, #name>
+        where
+            Self: Container<#comp> + Container<#name>;
+    };
+    let context = quote! {
+        Container<#name>
+    };
+
+    let parse = quote! {
+        fn #lower( #( #parse_args ),* ) -> Value<Self, #name> {
+            with_graph(|graph| {
+                let node = graph.add_node(Node::Construct(TypeName::#upper));
+                #( #parse_edges )*
+                Value(node)
+            })
+        }
+    };
+    let execute = quote! {
+        #[inline]
+        fn #lower( #( #execute_args ),* ) -> Value<Self, #name> {
+            Value(#name([ #( #args2.0 ),* ]))
+        }
+    };
+
+    [value, container, context, parse, execute]
 }
 
 fn type_matrix(
@@ -342,108 +353,121 @@ fn type_matrix(
     ty: &'static str,
     component: Option<Box<Type>>,
     size: Option<u32>,
-) -> TokenStream {
+) -> [TokenStream; 5] {
     let vector = component.unwrap();
-    let scalar = vector.clone().component.unwrap();
+    let comp = vector.name.clone();
     let size = size.unwrap();
-
-    let traits = vec![trait_matrix(
-        name.clone(),
-        size,
-        vector.name.clone(),
-        scalar.name.clone(),
-        type_values(ty),
-    )];
 
     let ty = Ident::new(ty, Span::call_site());
     let mat_size = (size * size) as usize;
 
     let lower = Ident::new(&name.to_string().to_lowercase(), Span::call_site());
     let upper = Ident::new(&name.to_string().to_uppercase(), Span::call_site());
-    let indices: Vec<u32> = (0..size).collect();
-    let args1: Vec<_> = (0..size)
+
+    let args: Vec<_> = (0..size)
         .map(|i| Ident::new(&format!("arg_{}", i), Span::call_site()))
         .collect();
-    let args2 = args1.clone();
-    let args3: Vec<_> = {
-        args1
+
+    let parse_edges: Vec<_> = args.iter()
+        .enumerate()
+        .map(|(index, ident)| {
+            let ident = ident.clone();
+            let index = index as u32;
+            quote! { graph.add_edge(#ident.0, node, #index); }
+        })
+        .collect();
+
+    let execute_unwrap: Vec<_> = args.iter()
+        .map(|ident| {
+            let ident = quote! { (#ident.0).0 };
+            let items: Vec<_> = (0..(size as usize))
+                .map(|i| quote! { #ident[#i] })
+                .collect();
+
+            quote! { #( #items ),* }
+        })
+        .collect();
+        
+    let container_args: Vec<_> = {
+        args
             .iter()
-            .flat_map(|ident| -> Vec<_> {
-                (0..size)
-                    .map(|index| {
-                        let index = Literal::u32_unsuffixed(index);
-                        quote! { #ident.#index }
-                    })
-                    .collect()
+            .map(|name| {
+                let comp = comp.clone();
+                quote! { #name: Value<Self, #comp> }
             })
             .collect()
     };
     let arg_list: Vec<_> = {
-        args1
+        args
             .iter()
             .map(|name| {
-                let comp = vector.name.clone();
-                quote! { #name: impl IntoValue<Output=#comp> }
+                let comp = comp.clone();
+                quote! { #name: impl IntoValue<C, Output=#comp> }
             })
             .collect()
     };
+    {}
 
-    let func_impl = match_values(
-        &args1,
-        &quote! {
-            Value::Concrete(#name([ #( #args3 ),* ]))
-        },
-        quote! {
-            let index = graph.add_node(Node::Construct(TypeName::#upper));
-            #( graph.add_edge(#args2, index, #indices); )*
-            index
-        },
-    );
-
-    quote! {
+    let value = quote! {
         #[derive(Copy, Clone, Debug)]
         pub struct #name(pub [ #ty ; #mat_size ]);
-        #( #traits )*
 
-        impl Into<Value<#name>> for [ #ty ; #mat_size ] {
-            fn into(self) -> Value<#name> {
-                Value::Concrete(#name(self))
-            }
-        }
-
-        impl Into<Value<#name>> for #name {
-            fn into(self) -> Value<Self> {
-                Value::Concrete(self)
-            }
+        impl AsTypeName for #name {
+            const TYPE_NAME: &'static TypeName = TypeName::#upper;
         }
 
         impl Index<u32> for #name {
             type Output = #ty;
+
             fn index(&self, index: u32) -> &Self::Output {
                 &self.0[index as usize]
             }
         }
 
-        impl IntoValue for #name {
-            type Output = Self;
-
-            fn into_value(self) -> Value<Self> {
-                Value::Concrete(self)
-            }
-
-            fn get_index(&self, mut graph: GraphRef) -> NodeIndex<u32> {
-                graph.add_node(Node::Constant(TypedValue::#name(self.0)))
+        impl Matrix for #name {
+            fn inverse(self) -> Self {
+                unimplemented!()
             }
         }
 
         #[inline]
-        pub fn #lower( #( #arg_list ),* ) -> Value<#name> {
-            #func_impl
+        pub fn #lower<C: Context>( #( #arg_list ),* ) -> Value<C, #name> {
+            <C as Container<#name>>::#lower( #( #args.into_value() ),* )
         }
-    }
+    };
+
+    let parse_args = container_args.clone();
+    let execute_args = container_args.clone();
+
+    let container = quote! {
+        fn #lower( #( #container_args ),* ) -> Value<Self, #name>
+        where
+            Self: Container<#comp> + Container<#name>;
+    };
+    let context = quote! {
+        Container<#name>
+    };
+
+    let parse = quote! {
+        fn #lower( #( #parse_args ),* ) -> Value<Self, #name> {
+            with_graph(|graph| {
+                let node = graph.add_node(Node::Construct(TypeName::#upper));
+                #( #parse_edges )*
+                Value(node)
+            })
+        }
+    };
+    let execute = quote! {
+        #[inline]
+        fn #lower( #( #execute_args ),* ) -> Value<Self, #name> {
+            Value(#name([ #( #execute_unwrap ),* ]))
+        }
+    };
+
+    [value, container, context, parse, execute]
 }
 
-pub fn type_structs() -> Vec<TokenStream> {
+pub fn type_structs() -> Vec<[TokenStream; 5]> {
     all_types().iter()
         .filter_map(|ty| {
             let Type { name, category, ty, component, size, .. } = ty.clone();
@@ -453,86 +477,7 @@ pub fn type_structs() -> Vec<TokenStream> {
                 Category::MATRIX => type_matrix(&name, ty, component, size),
             };
 
-            let upper = Ident::new(
-                &name.to_string().to_string().to_uppercase(), Span::call_site()
-            );
-
-            Some(quote! {
-                #decl
-
-                impl Input<#name> for Module {
-                    #[inline]
-                    fn input<N>(&self, location: u32, name: N) -> Value<#name> where N: Into<NameWrapper> {
-                        let index = {
-                            let mut module = self.borrow_mut();
-                            let NameWrapper(name) = name.into();
-                            module.main.add_node(Node::Input(location, TypeName::#upper, name))
-                        };
-
-                        Value::Abstract {
-                            module: self.clone(),
-                            function: FuncKind::Main,
-                            index,
-                            ty: PhantomData,
-                        }
-                    }
-                }
-
-                impl Uniform<#name> for Module {
-                    #[inline]
-                    fn uniform<N>(&self, location: u32, name: N) -> Value<#name> where N: Into<NameWrapper> {
-                        let index = {
-                            let mut module = self.borrow_mut();
-                            let NameWrapper(name) = name.into();
-                            module.main.add_node(Node::Uniform(location, TypeName::#upper, name))
-                        };
-
-                        Value::Abstract {
-                            module: self.clone(),
-                            function: FuncKind::Main,
-                            index,
-                            ty: PhantomData,
-                        }
-                    }
-                }
-
-                impl Output<#name> for Module {
-                    #[inline]
-                    fn output<N>(&self, location: u32, name: N, source: Value<#name>) where N: Into<NameWrapper> {
-                        let src = match source {
-                            Value::Abstract { index, .. } => index,
-                            source @ Value::Concrete(_) => {
-                                let module = self.borrow_mut();
-                                let graph = FuncKind::Main.get_graph_mut(module);
-                                source.get_index(graph)
-                            },
-                        };
-
-                        let mut module = self.borrow_mut();
-                        let NameWrapper(name) = name.into();
-                        let sink = module.main.add_node(Node::Output(location, TypeName::#upper, name));
-                        module.main.add_edge(src, sink, 0);
-                    }
-                }
-
-                impl<F> Parameter<#name> for Function<F> {
-                    #[inline]
-                    fn parameter(&self, location: u32) -> Value<#name> {
-                        let index = {
-                            let mut module = self.module.borrow_mut();
-                            let graph = &mut module[self.func];
-                            graph.add_node(Node::Parameter(location, TypeName::#upper))
-                        };
-
-                        Value::Abstract {
-                            module: self.module.clone(),
-                            function: FuncKind::Ref(self.func),
-                            index,
-                            ty: PhantomData,
-                        }
-                    }
-                }
-            })
+            Some(decl)
         })
         .collect()
 }

@@ -87,29 +87,3 @@ pub struct Node {
     pub args: Option<Vec<Type>>,
     pub result: Type,
 }
-
-impl Node {
-    pub fn is_value(&self) -> bool {
-        self.args.is_some()
-    }
-}
-
-pub fn all_nodes() -> Vec<Node> {
-    let mut res = Vec::new();
-
-    for result in all_types() {
-        res.push(Node {
-            name: result.name.clone(),
-            args: None,
-            result: result.clone(),
-        });
-
-        res.push(Node {
-            name: Ident::new("Value", Span::call_site()),
-            args: Some(vec![result.clone()]),
-            result: result.clone(),
-        });
-    }
-
-    res
-}

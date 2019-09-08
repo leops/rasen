@@ -34,6 +34,7 @@ fn types(out_dir: &str) {
     let mut from_string_arms = Vec::new();
     let mut typed_variants = Vec::new();
     let mut type_name_arms = Vec::new();
+    let mut typed_value_from = Vec::new();
     let mut register_constant_arms = Vec::new();
 
     for &(name, _, ty) in INTS.iter().chain(FLOATS.iter()) {
@@ -47,6 +48,16 @@ fn types(out_dir: &str) {
 
         type_name_arms.push(quote! {
             TypedValue::#name(..) => TypeName::#const_name
+        });
+
+        let ty_1 = Ident::new(ty, Span::call_site());
+        let ty_2 = Ident::new(ty, Span::call_site());
+        typed_value_from.push(quote! {
+            impl From<#ty_1> for TypedValue {
+                fn from(value: #ty_2) -> Self {
+                    TypedValue::#name(value)
+                }
+            }
         });
 
         let register_val = match ty {
@@ -145,11 +156,25 @@ fn types(out_dir: &str) {
                 #glsl_name => Self::#const_name,
             });
 
-            let tuple_fields: Vec<_> = (0..size)
+            let tuple_fields_1: Vec<_> = (0..size)
                 .map(|_| Ident::new(&ty, Span::call_site()))
                 .collect();
+            let tuple_fields_2 = tuple_fields_1.clone();
+            let tuple_fields_3 = tuple_fields_1.clone();
             typed_variants.push(quote! {
-                #type_variant( #( #tuple_fields ),* )
+                #type_variant( #( #tuple_fields_1 ),* )
+            });
+
+            let tuple_values_1: Vec<_> = (0..size)
+                .map(|i| Ident::new(&format!("v{}", i), Span::call_site()))
+                .collect();
+            let tuple_values_2 = tuple_values_1.clone();
+            typed_value_from.push(quote! {
+                impl From<( #( #tuple_fields_2 ),* )> for TypedValue {
+                    fn from(( #( #tuple_values_1 ),* ): ( #( #tuple_fields_3 ),* )) -> Self {
+                        TypedValue::#type_variant( #( #tuple_values_2 ),* )
+                    }
+                }
             });
 
             type_name_arms.push(quote! {
@@ -217,6 +242,14 @@ fn types(out_dir: &str) {
             let arr_size = (size * size) as usize;
             typed_variants.push(quote! {
                 #type_variant([#ty; #arr_size])
+            });
+
+            typed_value_from.push(quote! {
+                impl From<[#ty; #arr_size]> for TypedValue {
+                    fn from(value: [#ty; #arr_size]) -> Self {
+                        TypedValue::#type_variant(value)
+                    }
+                }
             });
 
             type_name_arms.push(quote! {
@@ -369,6 +402,8 @@ fn types(out_dir: &str) {
                 }
             }
         }
+
+        #( #typed_value_from )*
     };
 
     let path_types = Path::new(out_dir).join("types.rs");

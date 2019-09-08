@@ -112,8 +112,9 @@ fn main() {
 }
 ```
 
-This crate is even more experimental than the Rasen compiler itself but it already provides all the features exposed by
-the compiler.
+This crate is even more experimental than the Rasen compiler itself, it already provides all the features exposed by
+the compiler but they might not be completely spec compliant (for instance the typings constraint on the various GLSL
+functions may be more, or less strict than required by the OpenGL specification).
 
 Ultimately, the goal for the DSL crate (beside being a statically-checked equivalent of the graph builder) is to expose
 an API to test the execution of a shader on the CPU, with all the debugging tools that such an environment provides. The

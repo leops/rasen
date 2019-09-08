@@ -1,36 +1,16 @@
 //! Mul trait implementation
 
 use codegen::{
-    defs::{all_nodes, Category, Node},
+    defs::{all_types, Category, Type},
     mul::impl_mul_variant,
-    operations::match_values,
 };
 use proc_macro2::{Ident, Punct, Spacing, Span, TokenStream};
 
-pub fn construct_type(ty: Node) -> TokenStream {
-    let Node { name, args, .. } = ty;
-    match args {
-        Some(list) => {
-            let value = list.into_iter().map(|ty| ty.name);
-
-            quote! {
-                #name < #( #value ),* >
-            }
-        }
-
-        None => quote! { #name },
-    }
-}
-
 fn impl_math_variant(
-    (trait_id, node_id, operator): (Ident, Ident, Punct),
-    left_type: Node,
-    right_type: Node,
+    (trait_id, _, operator): (Ident, Ident, Punct),
+    left_res: Type,
+    right_res: Type,
 ) -> Option<TokenStream> {
-    let left_res = left_type.result.clone();
-    let right_res = right_type.result.clone();
-
-    let is_raw = !left_type.is_value() && !right_type.is_value();
     let (mut result, op_impl) = match (
         left_res.category,
         left_res.ty,
@@ -40,16 +20,15 @@ fn impl_math_variant(
         (_, "bool", _, _)
         | (_, _, _, "bool")
         | (Category::MATRIX, _, _, _)
-        | (_, _, Category::MATRIX, _) => return None,
-
-        (Category::SCALAR, _, Category::SCALAR, _) if is_raw => return None,
+        | (_, _, Category::MATRIX, _)
+        | (Category::SCALAR, _, Category::SCALAR, _) => return None,
 
         (lc, lt, rc, rt) if lc == rc && lt == rt && left_res.size == right_res.size => (
             left_res.name.clone(),
             match lc {
                 Category::MATRIX => unreachable!(),
                 Category::SCALAR => quote! {
-                    (lhs #operator rhs).into()
+                    self #operator rhs
                 },
                 Category::VECTOR => {
                     let result = left_res.name.clone();
@@ -74,9 +53,9 @@ fn impl_math_variant(
                     };
 
                     quote! {
-                        let #result( #( #l_fields ),* ) = lhs;
-                        let #result( #( #r_fields ),* ) = rhs;
-                        #result( #( #res_fields ),* ).into()
+                        let #result([ #( #l_fields ),* ]) = self;
+                        let #result([ #( #r_fields ),* ]) = rhs;
+                        #result([ #( #res_fields ),* ])
                     }
                 }
             },
@@ -85,88 +64,102 @@ fn impl_math_variant(
         _ => return None,
     };
 
-    let left_type = construct_type(left_type);
-    let right_type = construct_type(right_type);
+    let left_type = left_res.name.clone();
+    let right_type = right_res.name.clone();
     let method = Ident::new(&trait_id.to_string().to_lowercase(), Span::call_site());
 
     if left_type.to_string() == result.to_string() {
         result = Ident::new("Self", Span::call_site());
     }
 
-    if is_raw {
-        Some(quote! {
-            impl #trait_id<#right_type> for #left_type {
-                type Output = #result;
+    Some(quote! {
+        impl #trait_id<#right_type> for #left_type {
+            type Output = #result;
 
-                #[inline]
-                fn #method(self, rhs: #right_type) -> Self::Output {
-                    let lhs = self;
-                    #op_impl
-                }
+            #[inline]
+            fn #method(self, rhs: #right_type) -> Self::Output {
+                #op_impl
             }
-        })
-    } else {
-        let method_impl = match_values(
-            &[
-                Ident::new("lhs", Span::call_site()),
-                Ident::new("rhs", Span::call_site()),
-            ],
-            &op_impl,
-            quote! {
-                let index = graph.add_node(Node::#node_id);
-                graph.add_edge(lhs, index, 0);
-                graph.add_edge(rhs, index, 1);
-                index
-            },
-        );
-
-        let tokens = quote! {
-            impl #trait_id<#right_type> for #left_type {
-                type Output = Value<#result>;
-
-                #[inline]
-                fn #method(self, rhs: #right_type) -> Self::Output {
-                    let lhs = self;
-                    #method_impl
-                }
-            }
-        };
-
-        Some(tokens)
-    }
+        }
+    })
 }
 
-const MATH_OPS: [(&str, &str, char); 4] = [
+const MATH_OPS: [(&str, &str, char); 5] = [
     ("Add", "Add", '+'),
     ("Sub", "Subtract", '-'),
+    ("Mul", "Multiply", '*'),
     ("Div", "Divide", '/'),
     ("Rem", "Modulus", '%'),
 ];
 
-pub fn impl_math() -> Vec<TokenStream> {
-    all_nodes()
+pub fn impl_math() -> Vec<(TokenStream, TokenStream, TokenStream, Vec<TokenStream>)> {
+    MATH_OPS
         .into_iter()
-        .flat_map(|left_type| {
-            all_nodes()
-                .into_iter()
-                .flat_map(|right_type| {
-                    MATH_OPS
-                        .into_iter()
-                        .filter_map(|&(trait_name, node, operator)| {
-                            impl_math_variant(
-                                (
-                                    Ident::new(&trait_name, Span::call_site()),
-                                    Ident::new(&node, Span::call_site()),
-                                    Punct::new(operator, Spacing::Alone),
-                                ),
-                                left_type.clone(),
-                                right_type.clone(),
-                            )
+        .map(|&(trait_name, node, operator)| {
+            let lower = Ident::new(&trait_name.to_string().to_lowercase(), Span::call_site());
+            let trait_id = Ident::new(trait_name, Span::call_site());
+            let node_id = Ident::new(node, Span::call_site());
+            let op = Punct::new(operator, Spacing::Alone);
+
+            (
+                quote! {
+                    fn #lower<R: Copy>(lhs: Value<Self, T>, rhs: Value<Self, R>) -> Value<Self, T::Output>
+                    where
+                        T: #trait_id<R>,
+                        T::Output: Copy,
+                        Self: Container<R> + Container<T::Output>;
+                },
+                quote! {
+                    fn #lower<R: Copy>(lhs: Value<Self, T>, rhs: Value<Self, R>) -> Value<Self, T::Output>
+                    where
+                        T: #trait_id<R>,
+                        T::Output: Copy,
+                    {
+                        with_graph(|graph| {
+                            let node = graph.add_node(Node::#node_id);
+                            graph.add_edge(lhs.0, node, 0);
+                            graph.add_edge(rhs.0, node, 1);
+                            Value(node)
                         })
-                        .chain(impl_mul_variant(left_type.clone(), right_type.clone()).into_iter())
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>()
+                    }
+                },
+                quote! {
+                    fn #lower<R: Copy>(lhs: Value<Self, T>, rhs: Value<Self, R>) -> Value<Self, T::Output>
+                    where
+                        T: #trait_id<R>,
+                        T::Output: Copy,
+                    {
+                        Value(lhs.0 #op rhs.0)
+                    }
+                },
+
+                all_types()
+                    .into_iter()
+                    .flat_map(|left_type| {
+                        all_types()
+                            .into_iter()
+                            .filter_map(|right_type| {
+                                if trait_name == "Mul" {
+                                    impl_mul_variant(
+                                        left_type.clone(),
+                                        right_type.clone(),
+                                    )
+                                } else {
+                                    impl_math_variant(
+                                        (
+                                            Ident::new(&trait_name, Span::call_site()),
+                                            Ident::new(&node, Span::call_site()),
+                                            Punct::new(operator, Spacing::Alone),
+                                        ),
+                                        left_type.clone(),
+                                        right_type.clone(),
+                                    )
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect()
+            )
         })
         .collect()
 }

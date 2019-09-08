@@ -58,7 +58,6 @@
 //! directly into it.
 //!
 
-#![feature(try_from)]
 #![warn(clippy::all, clippy::pedantic)]
 
 extern crate petgraph;

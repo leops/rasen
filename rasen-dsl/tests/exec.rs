@@ -1,5 +1,3 @@
-#![feature(try_from)]
-
 use std::f32::consts::PI;
 
 extern crate rasen;
@@ -44,31 +42,22 @@ fn test_run_basic_vert() {
         a_pos,
         a_normal,
         a_uv,
-        projection.into(),
-        view.into(),
-        model.into(),
+        Value::of(projection),
+        Value::of(view),
+        Value::of(model),
     );
 
-    let Vec4(v_pos_x, v_pos_y, v_pos_z, v_pos_w) = match v_pos {
-        Value::Concrete(v) => v,
-        _ => panic!("v_pos is not concrete"),
-    };
-    assert_eq!((v_pos_x, v_pos_y, v_pos_z, v_pos_w), (1.0, 2.0, 3.0, 1.0));
+    let Vec4(v_pos) = v_pos.read();
+    assert_eq!(v_pos, [1.0, 2.0, 3.0, 1.0]);
 
-    let Vec4(v_norm_x, v_norm_y, v_norm_z, v_norm_w) = match v_norm {
-        Value::Concrete(v) => v,
-        _ => panic!("v_norm is not concrete"),
-    };
+    let Vec4(v_norm) = v_norm.read();
     assert_eq!(
-        (v_norm_x, v_norm_y, v_norm_z, v_norm_w),
-        (0.0, 1.0, 0.0, 1.0)
+        v_norm,
+        [0.0, 1.0, 0.0, 1.0]
     );
 
-    let Vec2(v_uv_x, v_uv_y) = match v_uv {
-        Value::Concrete(v) => v,
-        _ => panic!("v_uv is not concrete"),
-    };
-    assert_eq!((v_uv_x, v_uv_y), (0.5, 0.5));
+    let Vec2(v_uv) = v_uv.read();
+    assert_eq!(v_uv, [0.5, 0.5]);
 }
 
 #[test]
@@ -76,26 +65,20 @@ fn test_run_basic_frag() {
     let color = basic_frag(
         vec3(0.0f32, 1.0f32, 0.0f32),
         vec2(0.0f32, 0.0f32),
-        Value::Concrete(Sampler(Vec4(0.25f32, 0.625f32, 1.0f32, 1.0f32))),
+        Value::of(Sampler(Vec4([0.25f32, 0.625f32, 1.0f32, 1.0f32]))),
     );
 
-    let Vec4(color_r, color_g, color_b, color_a) = match color {
-        Value::Concrete(v) => v,
-        _ => panic!("color is not concrete"),
-    };
+    let Vec4(color) = color.read();
     assert_eq!(
-        (color_r, color_g, color_b, color_a),
-        (0.025, 0.0625, 0.1, 0.1)
+        color,
+        [0.025, 0.0625, 0.1, 0.1]
     );
 }
 
 #[test]
 #[allow(clippy::float_cmp)]
 fn test_run_functions() {
-    let result = functions(PI.into());
-    let result = match result {
-        Value::Concrete(v) => v,
-        _ => panic!("result is not concrete"),
-    };
+    let result = functions(Value::of(PI));
+    let result = result.read();
     assert_eq!(result, PI);
 }

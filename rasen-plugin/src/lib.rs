@@ -339,7 +339,7 @@ fn rasen_attribute(ecx: &mut ExtCtxt, _: Span, meta_item: &MetaItem, item: Annot
     }
 }
 
-fn idx_macro<'cx>(ecx: &'cx mut ExtCtxt, span: Span, tt: &[TokenTree]) -> Box<MacResult + 'cx> {
+fn idx_macro<'cx>(ecx: &'cx mut ExtCtxt, span: Span, tt: &[TokenTree]) -> Box<dyn MacResult + 'cx> {
     match (&tt[0], &tt[2]) {
         (&TokenTree::Token(_, Token::Ident(obj, _)), &TokenTree::Token(_, Token::Ident(index, _))) => {
             let index = index.to_string();
@@ -400,7 +400,7 @@ struct CompositeMacro<'a>{
 }
 
 impl<'a> TTMacroExpander for CompositeMacro<'a> {
-    fn expand<'cx>(&self, ecx: &'cx mut ExtCtxt, span: Span, ts: TokenStream, _: Option<Span>) -> Box<MacResult + 'cx> {
+    fn expand<'cx>(&self, ecx: &'cx mut ExtCtxt, span: Span, ts: TokenStream, _: Option<Span>) -> Box<dyn MacResult + 'cx> {
         let func = ast::Ident::from_str(self.func);
         let vec = ast::Ident::from_str("vec");
 
