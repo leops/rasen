@@ -1,4 +1,4 @@
-use spirv_headers::Dim;
+pub use spirv_headers::Dim;
 use std::fmt;
 
 /// Describes a SPIR-V data type

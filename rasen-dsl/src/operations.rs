@@ -1,8 +1,8 @@
 //! Exposes Rust counterparts of common GLSL functions
 
 use std::{
-    ops::{Add, Sub, Mul, Div, Index},
     cmp::PartialOrd,
+    ops::{Add, Div, Index, Mul, Sub},
 };
 
 use crate::{
@@ -16,9 +16,13 @@ include! {
 }
 
 #[inline]
-pub fn sample<C: Context>(
-    sample: impl IntoValue<C, Output = Sampler>,
+pub fn sample<C, V>(
+    sample: impl IntoValue<C, Output = Sampler<V>>,
     index: impl IntoValue<C, Output = Vec2>,
-) -> Value<C, Vec4> {
-    <C as Container<Sampler>>::sample(sample.into_value(), index.into_value())
+) -> Value<C, V>
+where
+    C: Context + Container<Sampler<V>> + Container<V>,
+    V: Copy,
+{
+    <C as Container<Sampler<V>>>::sample(sample.into_value(), index.into_value())
 }

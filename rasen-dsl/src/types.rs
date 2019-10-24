@@ -1,6 +1,6 @@
 //! Exports Rust counterparts for all the common GLSL types, along with a few marker traits
 
-use rasen::prelude::TypeName;
+use rasen::prelude::{Dim, TypeName};
 
 use std::ops::{Add, Div, Index, Mul, Rem, Sub};
 
@@ -66,4 +66,12 @@ pub trait Matrix {
 include!(concat!(env!("OUT_DIR"), "/types.rs"));
 
 #[derive(Copy, Clone, Debug)]
-pub struct Sampler(pub Vec4);
+pub struct Sampler<V>(pub V);
+
+impl<V: Vector> AsTypeName for Sampler<V>
+where
+    <V as Vector>::Scalar: AsTypeName,
+{
+    const TYPE_NAME: &'static TypeName =
+        &TypeName::Sampler(<<V as Vector>::Scalar as AsTypeName>::TYPE_NAME, Dim::Dim2D);
+}

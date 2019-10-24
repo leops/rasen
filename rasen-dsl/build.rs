@@ -61,15 +61,18 @@ impl Files {
             let mut file = File::create(&path).unwrap();
 
             let tokens = self.container;
-            write_tokens(&mut file, quote! {
-                pub trait Container<T> {
-                    type Value: Copy;
-                    #( #tokens )*
+            write_tokens(
+                &mut file,
+                quote! {
+                    pub trait Container<T> {
+                        type Value: Copy;
+                        #( #tokens )*
 
-                    fn sample(sampler: Value<Self, Sampler>, uv: Value<Self, Vec2>) -> Value<Self, Vec4>
-                        where Self: Container<Sampler> + Container<Vec2> + Container<Vec4>;
-                }
-            });
+                        fn sample<V: Copy>(sampler: Value<Self, Sampler<V>>, uv: Value<Self, Vec2>) -> Value<Self, V>
+                            where Self: Container<Sampler<V>> + Container<Vec2> + Container<V>;
+                    }
+                },
+            );
         }
 
         {
@@ -77,9 +80,12 @@ impl Files {
             let mut file = File::create(&path).unwrap();
 
             let tokens = self.context;
-            write_tokens(&mut file, quote! {
-                pub trait Context: Container<Sampler> + #( #tokens )+* {}
-            });
+            write_tokens(
+                &mut file,
+                quote! {
+                    pub trait Context: Container<Sampler<Vec4>> + #( #tokens )+* {}
+                },
+            );
         }
 
         {
@@ -87,21 +93,24 @@ impl Files {
             let mut file = File::create(&path).unwrap();
 
             let tokens = self.parse;
-            write_tokens(&mut file, quote! {
-                impl<T> Container<T> for Parse {
-                    type Value = ParseNode;
-                    #( #tokens )*
+            write_tokens(
+                &mut file,
+                quote! {
+                    impl<T> Container<T> for Parse {
+                        type Value = ParseNode;
+                        #( #tokens )*
 
-                    fn sample(sampler: Value<Self, Sampler>, uv: Value<Self, Vec2>) -> Value<Self, Vec4> {
-                        with_graph(|graph| {
-                            let node = graph.add_node(Node::Sample);
-                            graph.add_edge(sampler.0, node, 0);
-                            graph.add_edge(uv.0, node, 1);
-                            Value(node)
-                        })
+                        fn sample<V: Copy>(sampler: Value<Self, Sampler<V>>, uv: Value<Self, Vec2>) -> Value<Self, V> {
+                            with_graph(|graph| {
+                                let node = graph.add_node(Node::Sample);
+                                graph.add_edge(sampler.0, node, 0);
+                                graph.add_edge(uv.0, node, 1);
+                                Value(node)
+                            })
+                        }
                     }
-                }
-            });
+                },
+            );
         }
 
         {
@@ -109,17 +118,20 @@ impl Files {
             let mut file = File::create(&path).unwrap();
 
             let tokens = self.execute;
-            write_tokens(&mut file, quote! {
-                impl<T: Copy> Container<T> for Execute {
-                    type Value = T;
-                    #( #tokens )*
-                    
-                    #[inline]
-                    fn sample(sampler: Value<Self, Sampler>, _uv: Value<Self, Vec2>) -> Value<Self, Vec4> {
-                        Value((sampler.0).0)
+            write_tokens(
+                &mut file,
+                quote! {
+                    impl<T: Copy> Container<T> for Execute {
+                        type Value = T;
+                        #( #tokens )*
+
+                        #[inline]
+                        fn sample<V: Copy>(sampler: Value<Self, Sampler<V>>, _uv: Value<Self, Vec2>) -> Value<Self, V> {
+                            Value((sampler.0).0)
+                        }
                     }
-                }
-            });
+                },
+            );
         }
 
         {

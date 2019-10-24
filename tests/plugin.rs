@@ -20,7 +20,7 @@ pub fn basic_vert(
 pub fn basic_frag(
     a_normal: Value<Vec3>,
     a_uv: Value<Vec2>,
-    material: Value<Sampler>,
+    material: Value<Sampler<Vec4>>,
 ) -> Value<Vec4> {
     let normal = normalize(a_normal);
     let light = vec3(0.3f32, -0.5f32, 0.2f32);
