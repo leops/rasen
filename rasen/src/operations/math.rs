@@ -398,3 +398,102 @@ impl_math_op!(add, Add, true, IAdd, FAdd);
 impl_math_op!(subtract, Subtract, true, ISub, FSub);
 impl_math_op!(divide, Divide, true, UDiv, SDiv, FDiv);
 impl_math_op!(modulus, Modulus, false, UMod, SMod, FMod);
+
+macro_rules! impl_logical_op {
+    ($func:ident, $u_op:ident, $s_op:ident, $f_op:ident) => {
+        pub(crate) fn $func<B: Builder>(
+            builder: &mut B,
+            args: &[(&'static TypeName, u32)],
+        ) -> Result<(&'static TypeName, u32)> {
+            use types::TypeName::*;
+
+            let (l_arg, r_arg) = if args.len() == 2 {
+                (args[0], args[1])
+            } else {
+                bail!(ErrorKind::WrongArgumentsCount(args.len(), 2))
+            };
+
+            let result_id = builder.get_id();
+
+            let (l_type, l_value) = l_arg;
+            let (r_type, r_value) = r_arg;
+
+            let res_type = builder.register_type(TypeName::BOOL);
+
+            match (l_type, r_type) {
+                _ if l_type == r_type && r_type.is_signed() => {
+                    builder.push_instruction(Instruction::new(
+                        Op::$s_op,
+                        Some(res_type),
+                        Some(result_id),
+                        vec![Operand::IdRef(l_value), Operand::IdRef(r_value)],
+                    ));
+                }
+                (&Vec(l_len, l_scalar), &Vec(r_len, r_scalar))
+                    if l_len == r_len && l_scalar == r_scalar && r_scalar.is_signed() =>
+                {
+                    builder.push_instruction(Instruction::new(
+                        Op::$s_op,
+                        Some(res_type),
+                        Some(result_id),
+                        vec![Operand::IdRef(l_value), Operand::IdRef(r_value)],
+                    ));
+                }
+
+                _ if l_type == r_type && r_type.is_integer() && !r_type.is_signed() => {
+                    builder.push_instruction(Instruction::new(
+                        Op::$u_op,
+                        Some(res_type),
+                        Some(result_id),
+                        vec![Operand::IdRef(l_value), Operand::IdRef(r_value)],
+                    ));
+                }
+                (&Vec(l_len, l_scalar), &Vec(r_len, r_scalar))
+                    if l_len == r_len && l_scalar == r_scalar && r_scalar.is_integer() =>
+                {
+                    builder.push_instruction(Instruction::new(
+                        Op::$u_op,
+                        Some(res_type),
+                        Some(result_id),
+                        vec![Operand::IdRef(l_value), Operand::IdRef(r_value)],
+                    ));
+                }
+
+                _ if l_type == r_type && r_type.is_float() => {
+                    builder.push_instruction(Instruction::new(
+                        Op::$f_op,
+                        Some(res_type),
+                        Some(result_id),
+                        vec![Operand::IdRef(l_value), Operand::IdRef(r_value)],
+                    ));
+                }
+                (&Vec(l_len, l_scalar), &Vec(r_len, r_scalar))
+                    if l_len == r_len && l_scalar == r_scalar && r_scalar.is_float() =>
+                {
+                    builder.push_instruction(Instruction::new(
+                        Op::$f_op,
+                        Some(res_type),
+                        Some(result_id),
+                        vec![Operand::IdRef(l_value), Operand::IdRef(r_value)],
+                    ));
+                }
+
+                _ => bail!(ErrorKind::BadArguments(Box::new([l_type, r_type]))),
+            }
+
+            Ok((TypeName::BOOL, result_id))
+        }
+    };
+}
+
+impl_logical_op!(eq, IEqual, IEqual, FOrdEqual);
+impl_logical_op!(ne, INotEqual, INotEqual, FOrdNotEqual);
+impl_logical_op!(gt, UGreaterThan, SGreaterThan, FOrdGreaterThan);
+impl_logical_op!(
+    gte,
+    UGreaterThanEqual,
+    SGreaterThanEqual,
+    FOrdGreaterThanEqual
+);
+impl_logical_op!(lt, ULessThan, SLessThan, FOrdLessThan);
+impl_logical_op!(lte, ULessThanEqual, SLessThanEqual, FOrdLessThanEqual);

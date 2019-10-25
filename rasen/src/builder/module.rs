@@ -598,7 +598,7 @@ impl BuilderTrait for Builder {
                 sampler_id
             }
 
-            TypeName::_Pointer(inner) => {
+            TypeName::_Pointer(inner, storage) => {
                 let inner_id = self.register_type(inner);
 
                 let ptr_id = self.get_id();
@@ -606,10 +606,7 @@ impl BuilderTrait for Builder {
                     Op::TypePointer,
                     None,
                     Some(ptr_id),
-                    vec![
-                        Operand::StorageClass(StorageClass::Uniform),
-                        Operand::IdRef(inner_id),
-                    ],
+                    vec![Operand::StorageClass(storage), Operand::IdRef(inner_id)],
                 ));
 
                 ptr_id

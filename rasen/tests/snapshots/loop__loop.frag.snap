@@ -1,0 +1,67 @@
+---
+created: "2019-10-25T17:42:55.042347900+00:00"
+creator: insta@0.5.2
+expression: assembly
+source: rasen/tests/loop.rs
+---
+; SPIR-V
+; Version: 1.1
+; Generator: Unknown
+; Bound: 35
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %4 "main" %20 %34
+OpExecutionMode %4 OriginUpperLeft
+OpName %20 "i_value"
+OpName %34 "o_value"
+OpDecorate %20 Location 0
+OpDecorate %34 Location 0
+%10 = OpTypeBool
+%6 = OpTypeFloat 32
+%33 = OpTypePointer Output %6
+%34 = OpVariable  %33  Output
+%22 = OpTypePointer Function %6
+%19 = OpTypePointer Input %6
+%20 = OpVariable  %19  Input
+%18 = OpTypeFunction %6 %6
+%15 = OpConstant  %6  1.0
+%12 = OpTypeFunction %10 %6
+%8 = OpConstant  %6  10.0
+%1 = OpTypeVoid
+%2 = OpTypeFunction %1
+%4 = OpFunction  %1  None %2
+%3 = OpLabel
+%21 = OpLoad  %6  %20 None
+%23 = OpVariable  %22  Function
+OpStore %23 %21 None
+OpBranch %24
+%24 = OpLabel
+OpLoopMerge %25 %26 None
+OpBranch %27
+%27 = OpLabel
+%28 = OpLoad  %6  %23 None
+%29 = OpFunctionCall  %10  %5 %28
+OpBranchConditional %29 %30 %25
+%30 = OpLabel
+%31 = OpFunctionCall  %6  %13 %28
+OpStore %23 %31 None
+OpBranch %26
+%26 = OpLabel
+OpBranch %24
+%25 = OpLabel
+%32 = OpLoad  %6  %23 None
+OpStore %34 %32 None
+OpReturn
+OpFunctionEnd
+%5 = OpFunction  %10  None %12
+%7 = OpFunctionParameter  %6 
+%11 = OpLabel
+%9 = OpFOrdGreaterThan  %10  %7 %8
+OpReturnValue %9
+OpFunctionEnd
+%13 = OpFunction  %6  None %18
+%14 = OpFunctionParameter  %6 
+%17 = OpLabel
+%16 = OpFAdd  %6  %14 %15
+OpReturnValue %16
+OpFunctionEnd

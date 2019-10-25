@@ -171,7 +171,7 @@ impl Node {
 
             Node::Uniform(location, attr_type, ref name) => {
                 let type_id = module.register_type(attr_type);
-                let ptr_type = module.register_type(attr_type.as_ptr());
+                let ptr_type = module.register_type(attr_type.as_ptr(true));
 
                 if let attr_type @ &TypeName::Sampler(_, _) = attr_type {
                     let var_id = module.get_id();
@@ -334,6 +334,8 @@ impl Node {
                 Ok((arg_type, arg_value))
             }
 
+            Node::Loop(cond, body) => operations::loop_(cond, body, module, args),
+
             Node::Construct(output_type) => {
                 let type_id = module.register_type(output_type);
                 let res_id = module.get_id();
@@ -453,6 +455,13 @@ impl Node {
             Node::Refract => operations::refract(module, &args),
 
             Node::Sample => operations::sample(module, &args),
+
+            Node::Equal => operations::eq(module, &args),
+            Node::NotEqual => operations::ne(module, &args),
+            Node::Greater => operations::gt(module, &args),
+            Node::GreaterEqual => operations::gte(module, &args),
+            Node::Less => operations::lt(module, &args),
+            Node::LessEqual => operations::lte(module, &args),
         }
     }
 }

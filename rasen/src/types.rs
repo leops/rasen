@@ -1,4 +1,5 @@
 pub use spirv_headers::Dim;
+use spirv_headers::StorageClass;
 use std::fmt;
 
 /// Describes a SPIR-V data type
@@ -28,7 +29,7 @@ pub enum TypeName {
     ),
 
     #[doc(hidden)]
-    _Pointer(&'static TypeName),
+    _Pointer(&'static TypeName, StorageClass),
 }
 
 include!(concat!(env!("OUT_DIR"), "/types.rs"));
@@ -41,7 +42,10 @@ impl TypeName {
     pub const FLOAT: &'static Self = &TypeName::Float(false);
     pub const DOUBLE: &'static Self = &TypeName::Float(true);
 
-    pub(crate) const FLOAT_PTR: &'static Self = &TypeName::_Pointer(Self::FLOAT);
+    pub(crate) const FLOAT_PTR_UNI: &'static Self =
+        &TypeName::_Pointer(Self::FLOAT, StorageClass::Uniform);
+    pub(crate) const FLOAT_PTR_FUN: &'static Self =
+        &TypeName::_Pointer(Self::FLOAT, StorageClass::Function);
 
     #[inline]
     pub(crate) fn is_integer(&self) -> bool {
@@ -135,7 +139,7 @@ impl fmt::Debug for TypeName {
                 }
             }
 
-            TypeName::_Pointer(inner) => write!(f, "&{:?}", inner),
+            TypeName::_Pointer(inner, _) => write!(f, "&{:?}", inner),
         }
     }
 }

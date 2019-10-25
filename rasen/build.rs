@@ -326,9 +326,10 @@ fn types(out_dir: &str) {
                 }
 
                 as_pattern(&const_types, name).ok().map(|pattern| {
-                    let ptr_name = Ident::new(&format!("{}_PTR", name), Span::call_site());
+                    let ptr_name_uni = Ident::new(&format!("{}_PTR_UNI", name), Span::call_site());
+                    let ptr_name_fun = Ident::new(&format!("{}_PTR_FUN", name), Span::call_site());
                     quote! {
-                        #pattern => Self::#ptr_name,
+                        #pattern => if is_uniform { Self::#ptr_name_uni } else { Self::#ptr_name_fun },
                     }
                 })
             })
@@ -351,10 +352,13 @@ fn types(out_dir: &str) {
                     },
                 };
 
-                let ptr_name = Ident::new(&format!("{}_PTR", name), Span::call_site());
+                let ptr_name_uni = Ident::new(&format!("{}_PTR_UNI", name), Span::call_site());
+                let ptr_name_fun = Ident::new(&format!("{}_PTR_FUN", name), Span::call_site());
+
                 quote! {
                     pub const #name: &'static Self = & #value;
-                    const #ptr_name: &'static Self = &TypeName::_Pointer(Self::#name);
+                    const #ptr_name_uni: &'static Self = &TypeName::_Pointer(Self::#name, StorageClass::Uniform);
+                    const #ptr_name_fun: &'static Self = &TypeName::_Pointer(Self::#name, StorageClass::Function);
                 }
             })
             .collect()
@@ -374,9 +378,9 @@ fn types(out_dir: &str) {
             }
 
             #[inline]
-            pub(crate) fn as_ptr(&'static self) -> &'static Self {
+            pub(crate) fn as_ptr(&'static self, is_uniform: bool) -> &'static Self {
                 match *self {
-                    TypeName::Float(false) => Self::FLOAT_PTR,
+                    TypeName::Float(false) => if is_uniform { Self::FLOAT_PTR_UNI } else { Self::FLOAT_PTR_FUN },
                     #( #ptr_arms )*
                     ref other => panic!("Missing as_ptr implementation: {:?}", other),
                 }
@@ -579,6 +583,36 @@ const NODES: &'static [(&'static str, &'static str, &'static str)] = &[
         "Generate a step function by comparing two values",
         "Takes two parameter",
     ),
+    (
+        "Equal",
+        "Returns true if the first operand is equal to the second",
+        "Takes 2 parameters",
+    ),
+    (
+        "NotEqual",
+        "Returns true if the first operand is not equal to the second",
+        "Takes 2 parameters",
+    ),
+    (
+        "Greater",
+        "Returns true if the first operand is greater than the second",
+        "Takes 2 parameters",
+    ),
+    (
+        "GreaterEqual",
+        "Returns true if the first operand is greater than or equal to the second",
+        "Takes 2 parameters",
+    ),
+    (
+        "Less",
+        "Returns true if the first operand is less than the second",
+        "Takes 2 parameters",
+    ),
+    (
+        "LessEqual",
+        "Returns true if the first operand is less than or equal to the second",
+        "Takes 2 parameters",
+    ),
 ];
 
 fn nodes(out_dir: &str) {
@@ -642,6 +676,8 @@ fn nodes(out_dir: &str) {
             Parameter(u32, &'static TypeName),
             Return,
 
+            Loop(FunctionRef, FunctionRef),
+
             #( #node_variants ),*
         }
 
@@ -659,6 +695,7 @@ fn nodes(out_dir: &str) {
                     Node::Call(..) => "Call",
                     Node::Parameter(..) => "Parameter",
                     Node::Return => "Return",
+                    Node::Loop(..) => "Loop",
                     #( #to_string_arms ),*
                 }
             }
