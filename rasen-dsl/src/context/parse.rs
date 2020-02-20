@@ -1,8 +1,13 @@
-use std::ops::{Add, Sub, Mul, Div, Rem, Index};
+use std::ops::{Add, Div, Index, Mul, Rem, Sub};
 
-use rasen::prelude::{NodeIndex, Node, TypeName, TypedValue};
+use rasen::prelude::{Node, NodeIndex, TypeName, TypedValue};
 
-use crate::{context::{Container, Context}, value::Value, types::*, module::with_graph};
+use crate::{
+    context::{Container, Context},
+    module::with_graph,
+    types::*,
+    value::Value,
+};
 
 pub(crate) type ParseNode = NodeIndex;
 

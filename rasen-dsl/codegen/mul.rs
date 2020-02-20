@@ -65,8 +65,9 @@ pub fn impl_mul_variant(left_res: Type, right_res: Type) -> Option<TokenStream> 
         right_res.category,
         right_res.ty,
     ) {
-        (_, "bool", _, _) | (_, _, _, "bool") |
-        (Category::SCALAR, _, Category::SCALAR, _) => return None,
+        (_, "bool", _, _) | (_, _, _, "bool") | (Category::SCALAR, _, Category::SCALAR, _) => {
+            return None
+        }
 
         (lc, lt, rc, rt) if lc == rc && lt == rt && left_res.size == right_res.size => (
             left_res.name.clone(),

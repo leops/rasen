@@ -2,8 +2,10 @@
 
 pub use rasen::prelude::*;
 
-pub use crate::types::*;
-pub use crate::context::Context;
-pub use crate::value::{Value, IntoValue};
-pub use crate::module::Module;
-pub use crate::operations::*;
+pub use crate::{
+    context::Context,
+    module::Module,
+    operations::*,
+    types::*,
+    value::{IntoValue, Value},
+};

@@ -1,6 +1,10 @@
-use std::ops::{Add, Sub, Mul, Div, Rem, Index};
+use std::ops::{Add, Div, Index, Mul, Rem, Sub};
 
-use crate::{context::{Container, Context}, value::Value, types::*};
+use crate::{
+    context::{Container, Context},
+    types::*,
+    value::Value,
+};
 
 pub enum Execute {}
 

@@ -1,7 +1,7 @@
 //! GLSL Operation declarations
 
-use std::collections::{HashMap, hash_map::Entry};
 use proc_macro2::{Ident, Span, TokenStream};
+use std::collections::{hash_map::Entry, HashMap};
 
 enum Generic {
     Container,
@@ -15,16 +15,16 @@ impl Generic {
             Generic::Other(gen) => Some(*gen),
         }
     }
-    
+
     fn tokens(&self) -> TokenStream {
         match self {
             Generic::Container => {
                 quote! { T }
-            },
+            }
             Generic::Other(gen) => {
                 let name = Ident::new(&gen.to_string(), Span::call_site());
                 quote! { #name }
-            },
+            }
         }
     }
 }
@@ -50,9 +50,7 @@ impl ArgType {
 
     fn tokens(&self, is_trait: bool, is_ret: bool) -> TokenStream {
         match self {
-            ArgType::Generic(gen) => {
-                gen.tokens()
-            },
+            ArgType::Generic(gen) => gen.tokens(),
             ArgType::Value(inner) => {
                 let inner = inner.tokens(is_trait, is_ret);
                 let ctx = if is_trait {
@@ -67,7 +65,11 @@ impl ArgType {
                     quote! { impl IntoValue<#ctx, Output = #inner> }
                 }
             }
-            ArgType::Associated { generic, trait_, name } => {
+            ArgType::Associated {
+                generic,
+                trait_,
+                name,
+            } => {
                 let generic = generic.tokens();
                 let name = Ident::new(name, Span::call_site());
                 quote! { <#generic as #trait_>::#name }
@@ -81,10 +83,7 @@ impl ArgType {
                 let tokens = inner.tokens(context.is_trait(), true);
 
                 let mut inner = inner.constraints(context);
-                inner.add(
-                    quote! { #tokens },
-                    quote! { Copy },
-                );
+                inner.add(quote! { #tokens }, quote! { Copy });
 
                 match context {
                     Context::Trait => inner.add(quote! { Self }, quote! { Container<#tokens> }),
@@ -95,12 +94,11 @@ impl ArgType {
                 inner
             }
 
-            ArgType::Associated { generic, trait_, .. } => {
+            ArgType::Associated {
+                generic, trait_, ..
+            } => {
                 let generic = generic.tokens();
-                Constraints::of(
-                    quote! { #generic },
-                    trait_.clone(),
-                )
+                Constraints::of(quote! { #generic }, trait_.clone())
             }
 
             _ => Constraints::default(),
@@ -144,7 +142,13 @@ struct Constraints {
 impl Constraints {
     fn of(key: TokenStream, value: TokenStream) -> Self {
         let mut inner = HashMap::new();
-        inner.insert(key.to_string(), Constraint { key, values: vec![value] });
+        inner.insert(
+            key.to_string(),
+            Constraint {
+                key,
+                values: vec![value],
+            },
+        );
         Constraints { inner }
     }
 
@@ -192,25 +196,31 @@ fn operation(
         TokenStream::new(),
     ];
 
-    let generics: Vec<_> = args.into_iter()
-        .filter_map(|arg| 
-            arg.ty.generic().map(|name|
-                Ident::new(&name.to_string(), Span::call_site())
-            )
-        )
+    let generics: Vec<_> = args
+        .into_iter()
+        .filter_map(|arg| {
+            arg.ty
+                .generic()
+                .map(|name| Ident::new(&name.to_string(), Span::call_site()))
+        })
         .collect();
 
-    for (index, context) in [Context::Trait, Context::Parse, Context::Execute, Context::Func].iter().enumerate() {
+    for (index, context) in [
+        Context::Trait,
+        Context::Parse,
+        Context::Execute,
+        Context::Func,
+    ]
+    .iter()
+    .enumerate()
+    {
         let generics = generics.clone();
 
         let mut constraints = Constraints::default();
-        
+
         for constraint in constraint_list {
             for value in &constraint.values {
-                constraints.add(
-                    constraint.key.clone(),
-                    value.clone(),
-                );
+                constraints.add(constraint.key.clone(), value.clone());
             }
         }
 
@@ -220,7 +230,9 @@ fn operation(
 
         constraints.extend(result.constraints(context));
 
-        let constraints: Vec<_> = constraints.inner.values()
+        let constraints: Vec<_> = constraints
+            .inner
+            .values()
             .map(|constraint| {
                 let key = constraint.key.clone();
                 let values = constraint.values.clone();
@@ -230,7 +242,8 @@ fn operation(
 
         let is_trait = context.is_trait();
 
-        let fn_args: Vec<_> = args.into_iter()
+        let fn_args: Vec<_> = args
+            .into_iter()
             .map(|arg| {
                 let name = Ident::new(&arg.name, Span::call_site());
                 let ty = arg.ty.tokens(is_trait, false);
@@ -248,7 +261,8 @@ fn operation(
             },
 
             Context::Parse => {
-                let edges: Vec<_> = edges.into_iter()
+                let edges: Vec<_> = edges
+                    .into_iter()
                     .enumerate()
                     .map(|(index, name)| {
                         let ident = Ident::new(name, Span::call_site());
@@ -267,10 +281,11 @@ fn operation(
                         })
                     }
                 }
-            },
+            }
 
             Context::Execute => {
-                let args_unwrap: Vec<_> = args.into_iter()
+                let args_unwrap: Vec<_> = args
+                    .into_iter()
                     .filter_map(|arg| {
                         if let ArgType::Value(_) = arg.ty {
                             let name = Ident::new(&arg.name, Span::call_site());
@@ -288,10 +303,11 @@ fn operation(
                         Value({ #implementation })
                     }
                 }
-            },
+            }
 
             Context::Func => {
-                let arg_names: Vec<_> = args.into_iter()
+                let arg_names: Vec<_> = args
+                    .into_iter()
                     .map(|arg| {
                         let name = Ident::new(&arg.name, Span::call_site());
                         if let ArgType::Value(_) = arg.ty {
@@ -308,7 +324,7 @@ fn operation(
                         <C as Container<T>>::#fn_name( #( #arg_names ),* )
                     }
                 }
-            },
+            }
         };
     }
 
@@ -354,12 +370,10 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
         ),
         operation(
             "normalize",
-            &[
-                Argument {
-                    name: "vector",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "vector",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
             &[
                 Constraint {
@@ -377,7 +391,7 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
             &["vector"],
             quote! {
                 vector.normalize()
-            }
+            },
         ),
         operation(
             "dot",
@@ -412,7 +426,7 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
             &["a", "b"],
             quote! {
                 a.dot(&b)
-            }
+            },
         ),
         operation(
             "clamp",
@@ -431,19 +445,17 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
                 },
             ],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Numerical }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Numerical }],
+            }],
             quote! {
                 Node::Clamp
             },
             &["x", "min", "max"],
             quote! {
                 x.max(min).min(max)
-            }
+            },
         ),
         operation(
             "cross",
@@ -458,157 +470,131 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
                 },
             ],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Vector3 }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Vector3 }],
+            }],
             quote! {
                 Node::Cross
             },
             &["x", "y"],
             quote! {
                 x.cross(&y)
-            }
+            },
         ),
         operation(
             "floor",
-            &[
-                Argument {
-                    name: "val",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "val",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Floating }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Floating }],
+            }],
             quote! {
                 Node::Floor
             },
             &["val"],
             quote! {
                 val.floor()
-            }
+            },
         ),
         operation(
             "ceil",
-            &[
-                Argument {
-                    name: "val",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "val",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Floating }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Floating }],
+            }],
             quote! {
                 Node::Ceil
             },
             &["val"],
             quote! {
                 val.ceil()
-            }
+            },
         ),
         operation(
             "round",
-            &[
-                Argument {
-                    name: "val",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "val",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Floating }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Floating }],
+            }],
             quote! {
                 Node::Round
             },
             &["val"],
             quote! {
                 val.round()
-            }
+            },
         ),
         operation(
             "sin",
-            &[
-                Argument {
-                    name: "val",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "val",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Floating }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Floating }],
+            }],
             quote! {
                 Node::Sin
             },
             &["val"],
             quote! {
                 val.sin()
-            }
+            },
         ),
         operation(
             "cos",
-            &[
-                Argument {
-                    name: "val",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "val",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Floating }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Floating }],
+            }],
             quote! {
                 Node::Cos
             },
             &["val"],
             quote! {
                 val.cos()
-            }
+            },
         ),
         operation(
             "tan",
-            &[
-                Argument {
-                    name: "val",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "val",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Floating }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Floating }],
+            }],
             quote! {
                 Node::Tan
             },
             &["val"],
             quote! {
                 val.tan()
-            }
+            },
         ),
         operation(
             "pow",
@@ -623,19 +609,17 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
                 },
             ],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Numerical }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Numerical }],
+            }],
             quote! {
                 Node::Pow
             },
             &["x", "y"],
             quote! {
                 x.pow(y)
-            }
+            },
         ),
         operation(
             "min",
@@ -650,19 +634,17 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
                 },
             ],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Numerical }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Numerical }],
+            }],
             quote! {
                 Node::Min
             },
             &["x", "y"],
             quote! {
                 x.min(y)
-            }
+            },
         ),
         operation(
             "max",
@@ -677,28 +659,24 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
                 },
             ],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Numerical }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Numerical }],
+            }],
             quote! {
                 Node::Max
             },
             &["x", "y"],
             quote! {
                 x.max(y)
-            }
+            },
         ),
         operation(
             "length",
-            &[
-                Argument {
-                    name: "val",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "val",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Associated {
                 generic: Generic::Container,
                 trait_: quote! { Vector },
@@ -720,7 +698,7 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
             &["val"],
             quote! {
                 val.length()
-            }
+            },
         ),
         operation(
             "distance",
@@ -755,7 +733,7 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
             &["x", "y"],
             quote! {
                 (x - y).length()
-            }
+            },
         ),
         operation(
             "reflect",
@@ -791,7 +769,7 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
             quote! {
                 let dot = n.dot(&i);
                 i - (dot + dot) * n
-            }
+            },
         ),
         operation(
             "refract",
@@ -817,10 +795,7 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
             &[
                 Constraint {
                     key: quote! { T },
-                    values: vec![
-                        quote! { VectorFloating },
-                        quote! { Sub<T, Output=T> },
-                    ],
+                    values: vec![quote! { VectorFloating }, quote! { Sub<T, Output=T> }],
                 },
                 Constraint {
                     key: quote! { <T as Vector>::Scalar },
@@ -846,7 +821,7 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
                 } else {
                     eta * i - (eta * n.dot(&i) + k.sqrt()) * n
                 }
-            }
+            },
         ),
         operation(
             "mix",
@@ -865,93 +840,79 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
                 },
             ],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![
-                        quote! { GenType },
-                        quote! { Add<T, Output = T> },
-                        quote! { Sub<T, Output = T> },
-                        quote! { Mul<T, Output = T> },
-                    ],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![
+                    quote! { GenType },
+                    quote! { Add<T, Output = T> },
+                    quote! { Sub<T, Output = T> },
+                    quote! { Mul<T, Output = T> },
+                ],
+            }],
             quote! {
                 Node::Mix
             },
             &["x", "y", "a"],
             quote! {
                 x * (T::one() - a) + y * a
-            }
+            },
         ),
         operation(
             "sqrt",
-            &[
-                Argument {
-                    name: "val",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "val",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Floating }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Floating }],
+            }],
             quote! {
                 Node::Sqrt
             },
             &["val"],
             quote! {
                 val.sqrt()
-            }
+            },
         ),
         operation(
             "log",
-            &[
-                Argument {
-                    name: "val",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "val",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Floating }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Floating }],
+            }],
             quote! {
                 Node::Log
             },
             &["val"],
             quote! {
                 val.ln()
-            }
+            },
         ),
         operation(
             "abs",
-            &[
-                Argument {
-                    name: "val",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "val",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![quote! { Floating }],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Floating }],
+            }],
             quote! {
                 Node::Abs
             },
             &["val"],
             quote! {
                 val.abs()
-            }
+            },
         ),
         operation(
             "smoothstep",
@@ -970,18 +931,16 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
                 },
             ],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![
-                        quote! { GenType },
-                        quote! { Add<T, Output=T> },
-                        quote! { Sub<T, Output=T> },
-                        quote! { Mul<T, Output=T> },
-                        quote! { Div<T, Output=T> },
-                    ],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![
+                    quote! { GenType },
+                    quote! { Add<T, Output=T> },
+                    quote! { Sub<T, Output=T> },
+                    quote! { Mul<T, Output=T> },
+                    quote! { Div<T, Output=T> },
+                ],
+            }],
             quote! {
                 Node::Smoothstep
             },
@@ -992,32 +951,26 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
 
                 let t = ((x - edge0) / (edge1 - edge0)).max(T::zero()).min(T::one());
                 t * t * (three - two * t)
-            }
+            },
         ),
         operation(
             "inverse",
-            &[
-                Argument {
-                    name: "v",
-                    ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-                },
-            ],
+            &[Argument {
+                name: "v",
+                ty: ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
+            }],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![
-                        quote! { Matrix },
-                    ],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { Matrix }],
+            }],
             quote! {
                 Node::Inverse
             },
             &["v"],
             quote! {
                 v.inverse()
-            }
+            },
         ),
         operation(
             "step",
@@ -1032,15 +985,10 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
                 },
             ],
             ArgType::Value(Box::new(ArgType::Generic(Generic::Container))),
-            &[
-                Constraint {
-                    key: quote! { T },
-                    values: vec![
-                        quote! { GenType },
-                        quote! { PartialOrd<T> },
-                    ],
-                },
-            ],
+            &[Constraint {
+                key: quote! { T },
+                values: vec![quote! { GenType }, quote! { PartialOrd<T> }],
+            }],
             quote! {
                 Node::Step
             },
@@ -1051,7 +999,7 @@ pub fn impl_operations() -> Vec<[TokenStream; 4]> {
                 } else {
                     T::one()
                 }
-            }
+            },
         ),
     ]
 }
