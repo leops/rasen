@@ -51,10 +51,7 @@ fn test_run_basic_vert() {
     assert_eq!(v_pos, [1.0, 2.0, 3.0, 1.0]);
 
     let Vec4(v_norm) = v_norm.read();
-    assert_eq!(
-        v_norm,
-        [0.0, 1.0, 0.0, 1.0]
-    );
+    assert_eq!(v_norm, [0.0, 1.0, 0.0, 1.0]);
 
     let Vec2(v_uv) = v_uv.read();
     assert_eq!(v_uv, [0.5, 0.5]);
@@ -69,10 +66,7 @@ fn test_run_basic_frag() {
     );
 
     let Vec4(color) = color.read();
-    assert_eq!(
-        color,
-        [0.025, 0.0625, 0.1, 0.1]
-    );
+    assert_eq!(color, [0.025, 0.0625, 0.1, 0.1]);
 }
 
 #[test]

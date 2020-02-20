@@ -1,8 +1,6 @@
 //! GLSL Types declarations
 
-use codegen::{
-    defs::{all_types, Category, Type},
-};
+use codegen::defs::{all_types, Category, Type};
 use proc_macro2::{Ident, Span, TokenStream};
 
 fn type_scalar(name: &Ident, kind: &'static str) -> [TokenStream; 5] {
@@ -13,7 +11,7 @@ fn type_scalar(name: &Ident, kind: &'static str) -> [TokenStream; 5] {
     let mut traits = Vec::new();
 
     match kind {
-        "bool" => {},
+        "bool" => {}
 
         "i32" => {
             traits.push(quote! {
@@ -33,7 +31,7 @@ fn type_scalar(name: &Ident, kind: &'static str) -> [TokenStream; 5] {
                     fn pow(self, rhs: Self) -> Self { self.pow(std::convert::TryInto::try_into(rhs).unwrap()) }
                 }
             });
-        },
+        }
         "u32" => {
             traits.push(quote! {
                 impl GenType for #name {
@@ -52,7 +50,7 @@ fn type_scalar(name: &Ident, kind: &'static str) -> [TokenStream; 5] {
                     fn pow(self, rhs: Self) -> Self { self.pow(rhs) }
                 }
             });
-        },
+        }
 
         _ => {
             traits.push(quote! {
@@ -159,7 +157,8 @@ fn type_vector(
         .collect();
     let args2 = args1.clone();
 
-    let parse_edges: Vec<_> = args1.iter()
+    let parse_edges: Vec<_> = args1
+        .iter()
         .enumerate()
         .map(|(index, ident)| {
             let ident = ident.clone();
@@ -368,7 +367,8 @@ fn type_matrix(
         .map(|i| Ident::new(&format!("arg_{}", i), Span::call_site()))
         .collect();
 
-    let parse_edges: Vec<_> = args.iter()
+    let parse_edges: Vec<_> = args
+        .iter()
         .enumerate()
         .map(|(index, ident)| {
             let ident = ident.clone();
@@ -377,7 +377,8 @@ fn type_matrix(
         })
         .collect();
 
-    let execute_unwrap: Vec<_> = args.iter()
+    let execute_unwrap: Vec<_> = args
+        .iter()
         .map(|ident| {
             let ident = quote! { (#ident.0).0 };
             let items: Vec<_> = (0..(size as usize))
@@ -387,10 +388,9 @@ fn type_matrix(
             quote! { #( #items ),* }
         })
         .collect();
-        
+
     let container_args: Vec<_> = {
-        args
-            .iter()
+        args.iter()
             .map(|name| {
                 let comp = comp.clone();
                 quote! { #name: Value<Self, #comp> }
@@ -398,8 +398,7 @@ fn type_matrix(
             .collect()
     };
     let arg_list: Vec<_> = {
-        args
-            .iter()
+        args.iter()
             .map(|name| {
                 let comp = comp.clone();
                 quote! { #name: impl IntoValue<C, Output=#comp> }
@@ -468,9 +467,17 @@ fn type_matrix(
 }
 
 pub fn type_structs() -> Vec<[TokenStream; 5]> {
-    all_types().iter()
+    all_types()
+        .iter()
         .filter_map(|ty| {
-            let Type { name, category, ty, component, size, .. } = ty.clone();
+            let Type {
+                name,
+                category,
+                ty,
+                component,
+                size,
+                ..
+            } = ty.clone();
             let decl = match category {
                 Category::SCALAR => type_scalar(&name, ty),
                 Category::VECTOR => type_vector(&name, ty, component, size),

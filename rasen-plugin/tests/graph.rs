@@ -1,10 +1,10 @@
 #![feature(plugin, custom_attribute, try_from)]
 #![plugin(rasen_plugin)]
 
+extern crate insta;
 extern crate rasen;
 extern crate rasen_dsl;
 extern crate rspirv;
-extern crate insta;
 
 use rasen_dsl::prelude::*;
 use std::f32::consts::PI;

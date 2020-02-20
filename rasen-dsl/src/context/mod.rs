@@ -1,9 +1,9 @@
-use std::ops::{Add, Sub, Mul, Div, Rem, Index};
+use std::ops::{Add, Div, Index, Mul, Rem, Sub};
 
-use crate::{value::Value, types::*};
+use crate::{types::*, value::Value};
 
-pub mod parse;
 pub mod execute;
+pub mod parse;
 
 include! {
     concat!(env!("OUT_DIR"), "/container.rs")

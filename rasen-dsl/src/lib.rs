@@ -13,7 +13,7 @@
 //!     let res = clamp(dot(normal, light), 0.1f32, 1.0f32) * color;
 //!     module.output(0, "o_color", res);
 //! });
-//! 
+//!
 //! # #[allow(unused_variables)]
 //! let bytecode = build_program(&shader, ShaderType::Fragment).unwrap();
 //! # }

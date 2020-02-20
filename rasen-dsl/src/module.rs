@@ -1,9 +1,9 @@
 //! Module builder utility
 
 use std::{
-    rc::Rc,
     cell::RefCell,
     ops::{Fn, FnMut, FnOnce},
+    rc::Rc,
 };
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
 };
 use rasen::{
     module::FunctionRef,
-    prelude::{Graph, Module as ModuleImpl, Node, VariableName, BuiltIn},
+    prelude::{BuiltIn, Graph, Module as ModuleImpl, Node, VariableName},
 };
 
 type Shared<T> = Rc<RefCell<T>>;
@@ -42,7 +42,11 @@ pub(crate) fn with_graph<T>(thunk: impl FnOnce(&mut Graph) -> T) -> T {
     })
 }
 
-fn using_module<T>(push: impl FnOnce(&mut BuilderContext) -> (), code: impl FnOnce() -> (), pop: impl FnOnce(&mut BuilderContext) -> T) -> T {
+fn using_module<T>(
+    push: impl FnOnce(&mut BuilderContext) -> (),
+    code: impl FnOnce() -> (),
+    pop: impl FnOnce(&mut BuilderContext) -> T,
+) -> T {
     CONTEXT.with(move |cell| {
         let mut ctx = cell.borrow_mut();
         push(&mut ctx as &mut BuilderContext);
@@ -92,9 +96,7 @@ pub struct Module;
 
 impl Module {
     pub fn build(thunk: impl FnOnce(&Self) -> ()) -> ModuleImpl {
-        let module = Rc::new(RefCell::new(
-            ModuleImpl::default()
-        ));
+        let module = Rc::new(RefCell::new(ModuleImpl::default()));
 
         using_module(
             |ctx| {
@@ -108,8 +110,11 @@ impl Module {
                 let value = ctx.take();
 
                 let (module, func) = value.expect("Builder is missing in thread local key");
-                debug_assert!(func.is_none(), "Module builder unwrapped from function context");
-                
+                debug_assert!(
+                    func.is_none(),
+                    "Module builder unwrapped from function context"
+                );
+
                 let module = Rc::try_unwrap(module).expect("Module builder has live references");
                 module.into_inner()
             },
@@ -132,7 +137,11 @@ impl Module {
         Parse: Container<T, Value = ParseNode>,
     {
         with_graph(|graph| {
-            Value(graph.add_node(Node::Uniform(index, T::TYPE_NAME, name.into_variable_name())))
+            Value(graph.add_node(Node::Uniform(
+                index,
+                T::TYPE_NAME,
+                name.into_variable_name(),
+            )))
         })
     }
 
@@ -180,9 +189,7 @@ impl Module {
             },
         );
 
-        FnWrapper(move |args: A| -> Value<Parse, R> {
-            Value(args.call(func))
-        })
+        FnWrapper(move |args: A| -> Value<Parse, R> { Value(args.call(func)) })
     }
 }
 

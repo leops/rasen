@@ -3,7 +3,7 @@
 //! # Module wrapper
 //! The `rasen(module)` attribute on a function will generate a wrapper function with the `_module` suffix,
 //! returning the corresponding Module object.
-//! 
+//!
 //! The `rasen(function)` attribute flags a function to be exported when called from a module builder function.
 //! Otherwise, due to the way the compiler works on data-flow graph, any function called in Rust will be inlined
 //! in the resulting code.
@@ -20,7 +20,7 @@
 //! fn clamp_light(value: Value<Float>) -> Value<Float> {
 //!     clamp(value, 0.1f32, 1.0f32)
 //! }
-//! 
+//!
 //! #[rasen(module)] // This will create the function basic_frag_module() -> Module
 //! fn basic_frag(a_normal: Value<Vec3>) -> Value<Vec4> {
 //!     let normal = normalize(a_normal);
@@ -69,57 +69,70 @@
 //! # constructors_module()
 //! ```
 
-#![recursion_limit="256"]
+#![recursion_limit = "256"]
 #![feature(plugin_registrar, rustc_private, custom_attribute, box_syntax)]
 #![warn(clippy::all, clippy::pedantic)]
 
 extern crate rustc_plugin;
 extern crate syntax;
-#[macro_use] extern crate quote;
+#[macro_use]
+extern crate quote;
 extern crate proc_macro2;
 
-use syntax::source_map::{Span, FileName};
-use syntax::symbol::Symbol;
-use syntax::ext::build::AstBuilder;
 use rustc_plugin::registry::Registry;
-use syntax::parse::{self, token::{Token, Lit}};
-use syntax::tokenstream::{TokenStream, TokenTree};
-use syntax::ast::{
-    self, Item, ItemKind,
-    MetaItem, MetaItemKind, NestedMetaItemKind,
-    FnDecl, FunctionRetTy, TyKind, PatKind, ExprKind,
+use syntax::{
+    ast::{
+        self, ExprKind, FnDecl, FunctionRetTy, Item, ItemKind, MetaItem, MetaItemKind,
+        NestedMetaItemKind, PatKind, TyKind,
+    },
+    ext::{
+        base::{Annotatable, ExtCtxt, MacEager, MacResult, SyntaxExtension, TTMacroExpander},
+        build::AstBuilder,
+    },
+    parse::{
+        self,
+        token::{Lit, Token},
+    },
+    source_map::{edition::Edition, FileName, Span},
+    symbol::Symbol,
+    tokenstream::{TokenStream, TokenTree},
 };
-use syntax::ext::base::{Annotatable, ExtCtxt, SyntaxExtension, MacResult, MacEager, TTMacroExpander};
-use syntax::source_map::edition::Edition;
 
 use proc_macro2::{Ident, Span as MacroSpan};
 
 #[allow(clippy::cast_possible_truncation)]
 fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Vec<Annotatable> {
     let tokens = if let Annotatable::Item(ref item) = item {
-        let Item { ident, ref node, .. } = **item;
+        let Item {
+            ident, ref node, ..
+        } = **item;
         let fn_name = Ident::new(&format!("{}", ident), MacroSpan::call_site());
         let aux_name = Ident::new(&format!("{}_module", ident), MacroSpan::call_site());
 
         if let ItemKind::Fn(ref decl, ..) = *node {
-            let FnDecl { ref inputs, ref output, .. } = **decl;
+            let FnDecl {
+                ref inputs,
+                ref output,
+                ..
+            } = **decl;
 
             let args: Vec<_> = {
-                inputs.iter()
+                inputs
+                    .iter()
                     .map(|arg| match arg.pat.node {
-                        PatKind::Ident(_, ident, _) => Ident::new(&format!("{}", ident.name), MacroSpan::call_site()),
+                        PatKind::Ident(_, ident, _) => {
+                            Ident::new(&format!("{}", ident.name), MacroSpan::call_site())
+                        }
                         _ => panic!("unimplemented {:?}", arg.pat.node),
                     })
                     .collect()
             };
 
             let (attributes, uniforms): (Vec<_>, Vec<_>) = {
-                args.clone()
-                    .into_iter()
-                    .partition(|ident| {
-                        let name = format!("{}", ident);
-                        name.starts_with("a_")
-                    })
+                args.clone().into_iter().partition(|ident| {
+                    let name = format!("{}", ident);
+                    name.starts_with("a_")
+                })
             };
 
             let attr_names: Vec<_> = attributes.iter().map(|id| id.to_string()).collect();
@@ -138,11 +151,11 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
 
                         let outputs = list.clone();
                         (quote! { ( #( #list ),* ) }, outputs)
-                    },
+                    }
                     TyKind::Path(_, _) => {
                         let output = Ident::new("output", MacroSpan::call_site());
-                        (quote!{ #output }, vec![ output ])
-                    },
+                        (quote! { #output }, vec![output])
+                    }
                     _ => panic!("unimplemented {:?}", ty.node),
                 },
                 _ => panic!("unimplemented {:?}", output),
@@ -152,17 +165,20 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
             let uni_id: Vec<_> = (0..uniforms.len()).map(|i| i as u32).collect();
             let out_id: Vec<_> = (0..outputs.len()).map(|i| i as u32).collect();
 
-            Some((format!("{}_module", ident), quote! {
-                #[allow(dead_code)]
-                pub fn #aux_name() -> Module {
-                    let module = Module::new();
-                    #( let #attributes = module.input(#attr_id, #attr_names); )*
-                    #( let #uniforms = module.uniform(#uni_id, #uni_names); )*
-                    let #output = #fn_name( #( #args ),* );
-                    #( module.output(#out_id, None, #outputs); )*
-                    module
-                }
-            }))
+            Some((
+                format!("{}_module", ident),
+                quote! {
+                    #[allow(dead_code)]
+                    pub fn #aux_name() -> Module {
+                        let module = Module::new();
+                        #( let #attributes = module.input(#attr_id, #attr_names); )*
+                        #( let #uniforms = module.uniform(#uni_id, #uni_names); )*
+                        let #output = #fn_name( #( #args ),* );
+                        #( module.output(#out_id, None, #outputs); )*
+                        module
+                    }
+                },
+            ))
         } else {
             None
         }
@@ -190,7 +206,7 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
  *     let func = |args: T, ...| -> R {
  *         // Code
  *     };
- * 
+ *
  *     if let Some(module) = args.get_module().or_else(...) {
  *         let func = module.function(func);
  *         func(args, ...)
@@ -201,119 +217,170 @@ fn insert_module_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Ve
  */
 fn insert_function_wrapper(ecx: &mut ExtCtxt, span: Span, item: Annotatable) -> Vec<Annotatable> {
     if let Annotatable::Item(item) = item {
-        let Item { ident, ref attrs, ref node, span, .. } = *item;
+        let Item {
+            ident,
+            ref attrs,
+            ref node,
+            span,
+            ..
+        } = *item;
         if let ItemKind::Fn(ref decl, header, ref generics, ref block) = *node {
-            let FnDecl { ref inputs, ref output, .. } = **decl;
-            return vec![
-                Annotatable::Item(ecx.item(
-                    span, ident,
+            let FnDecl {
+                ref inputs,
+                ref output,
+                ..
+            } = **decl;
+            return vec![Annotatable::Item(
+                ecx.item(
+                    span,
+                    ident,
                     attrs.clone(),
                     ItemKind::Fn(
-                        ecx.fn_decl(
-                            inputs.clone(),
-                            output.clone(),
-                        ),
+                        ecx.fn_decl(inputs.clone(), output.clone()),
                         header,
                         generics.clone(),
-                        ecx.block(block.span, vec![
-                            ecx.stmt_let(
-                                block.span, false,
-                                ecx.ident_of("func"),
-                                ecx.lambda_fn_decl(
+                        ecx.block(
+                            block.span,
+                            vec![
+                                ecx.stmt_let(
                                     block.span,
-                                    ecx.fn_decl(
-                                        inputs.clone(),
-                                        output.clone(),
-                                    ),
-                                    ecx.expr_block(block.clone()),
-                                    block.span,
-                                ),
-                            ),
-                            ecx.stmt_expr(ecx.expr(block.span, ExprKind::IfLet(
-                                vec![
-                                    ecx.pat_some(
+                                    false,
+                                    ecx.ident_of("func"),
+                                    ecx.lambda_fn_decl(
                                         block.span,
-                                        ecx.pat_ident(block.span, ecx.ident_of("module")),
-                                    )
-                                ],
-                                inputs.iter()
-                                    .fold(None, |current, arg| match arg.pat.node {
-                                        PatKind::Ident(_, ident, _) => Some({
-                                            let id = ecx.expr_ident(ident.span, ident);
-                                            let module = ecx.expr_method_call(
-                                                ident.span, id,
-                                                ecx.ident_of("get_module"),
-                                                Vec::new(),
-                                            );
+                                        ecx.fn_decl(inputs.clone(), output.clone()),
+                                        ecx.expr_block(block.clone()),
+                                        block.span,
+                                    ),
+                                ),
+                                ecx.stmt_expr(
+                                    ecx.expr(
+                                        block.span,
+                                        ExprKind::IfLet(
+                                            vec![ecx.pat_some(
+                                                block.span,
+                                                ecx.pat_ident(block.span, ecx.ident_of("module")),
+                                            )],
+                                            inputs
+                                                .iter()
+                                                .fold(None, |current, arg| match arg.pat.node {
+                                                    PatKind::Ident(_, ident, _) => Some({
+                                                        let id = ecx.expr_ident(ident.span, ident);
+                                                        let module = ecx.expr_method_call(
+                                                            ident.span,
+                                                            id,
+                                                            ecx.ident_of("get_module"),
+                                                            Vec::new(),
+                                                        );
 
-                                            if let Some(chain) = current {
-                                                ecx.expr_method_call(
-                                                    ident.span, chain,
-                                                    ecx.ident_of("or_else"),
-                                                    vec![
-                                                        ecx.lambda0(ident.span, module),
-                                                    ],
-                                                )
-                                            } else {
-                                                module
-                                            }
-                                        }),
-                                        _ => ecx.span_fatal(arg.pat.span, "Unsupported destructuring"),
-                                    })
-                                    .unwrap(),
-                                ecx.block(block.span, vec![
-                                    ecx.stmt_let(
-                                        block.span, false,
-                                        ecx.ident_of("func"),
-                                        ecx.expr_method_call(
-                                            block.span,
-                                            ecx.expr_ident(block.span, ecx.ident_of("module")),
-                                            ecx.ident_of("function"),
-                                            vec![
-                                                ecx.expr_ident(block.span, ecx.ident_of("func")),
-                                            ],
+                                                        if let Some(chain) = current {
+                                                            ecx.expr_method_call(
+                                                                ident.span,
+                                                                chain,
+                                                                ecx.ident_of("or_else"),
+                                                                vec![
+                                                                    ecx.lambda0(ident.span, module)
+                                                                ],
+                                                            )
+                                                        } else {
+                                                            module
+                                                        }
+                                                    }),
+                                                    _ => ecx.span_fatal(
+                                                        arg.pat.span,
+                                                        "Unsupported destructuring",
+                                                    ),
+                                                })
+                                                .unwrap(),
+                                            ecx.block(
+                                                block.span,
+                                                vec![
+                                                    ecx.stmt_let(
+                                                        block.span,
+                                                        false,
+                                                        ecx.ident_of("func"),
+                                                        ecx.expr_method_call(
+                                                            block.span,
+                                                            ecx.expr_ident(
+                                                                block.span,
+                                                                ecx.ident_of("module"),
+                                                            ),
+                                                            ecx.ident_of("function"),
+                                                            vec![ecx.expr_ident(
+                                                                block.span,
+                                                                ecx.ident_of("func"),
+                                                            )],
+                                                        ),
+                                                    ),
+                                                    ecx.stmt_expr(
+                                                        ecx.expr_call_ident(
+                                                            block.span,
+                                                            ecx.ident_of("func"),
+                                                            inputs
+                                                                .iter()
+                                                                .map(|arg| match arg.pat.node {
+                                                                    PatKind::Ident(_, ident, _) => {
+                                                                        ecx.expr_ident(
+                                                                            ident.span, ident,
+                                                                        )
+                                                                    }
+                                                                    _ => ecx.span_fatal(
+                                                                        arg.pat.span,
+                                                                        "Unsupported destructuring",
+                                                                    ),
+                                                                })
+                                                                .collect(),
+                                                        ),
+                                                    ),
+                                                ],
+                                            ),
+                                            Some(
+                                                ecx.expr_call_ident(
+                                                    block.span,
+                                                    ecx.ident_of("func"),
+                                                    inputs
+                                                        .iter()
+                                                        .map(|arg| match arg.pat.node {
+                                                            PatKind::Ident(_, ident, _) => {
+                                                                ecx.expr_ident(ident.span, ident)
+                                                            }
+                                                            _ => ecx.span_fatal(
+                                                                arg.pat.span,
+                                                                "Unsupported destructuring",
+                                                            ),
+                                                        })
+                                                        .collect(),
+                                                ),
+                                            ),
                                         ),
                                     ),
-                                    ecx.stmt_expr(ecx.expr_call_ident(
-                                        block.span,
-                                        ecx.ident_of("func"),
-                                        inputs.iter()
-                                            .map(|arg| match arg.pat.node {
-                                                PatKind::Ident(_, ident, _) => ecx.expr_ident(ident.span, ident),
-                                                _ => ecx.span_fatal(arg.pat.span, "Unsupported destructuring"),
-                                            })
-                                            .collect(),
-                                    )),
-                                ]),
-                                Some(
-                                    ecx.expr_call_ident(
-                                        block.span,
-                                        ecx.ident_of("func"),
-                                        inputs.iter()
-                                            .map(|arg| match arg.pat.node {
-                                                PatKind::Ident(_, ident, _) => ecx.expr_ident(ident.span, ident),
-                                                _ => ecx.span_fatal(arg.pat.span, "Unsupported destructuring"),
-                                            })
-                                            .collect(),
-                                    ),
                                 ),
-                            ))),
-                        ]),
+                            ],
+                        ),
                     ),
-                )),
-            ];
+                ),
+            )];
         }
     }
 
     ecx.span_fatal(span, "Unsupported item for Rasen function attribute")
 }
 
-fn rasen_attribute(ecx: &mut ExtCtxt, _: Span, meta_item: &MetaItem, item: Annotatable) -> Vec<Annotatable> {
+fn rasen_attribute(
+    ecx: &mut ExtCtxt,
+    _: Span,
+    meta_item: &MetaItem,
+    item: Annotatable,
+) -> Vec<Annotatable> {
     let res = match meta_item.node {
         MetaItemKind::List(ref list) if list.len() == 1 => {
             let first = &list[0];
             match first.node {
-                NestedMetaItemKind::MetaItem(MetaItem { ref ident, node: MetaItemKind::Word, span }) => {
+                NestedMetaItemKind::MetaItem(MetaItem {
+                    ref ident,
+                    node: MetaItemKind::Word,
+                    span,
+                }) => {
                     if ident.segments.len() == 1 {
                         let segment = &ident.segments[0];
                         if segment.ident.name == Symbol::intern("module") {
@@ -326,10 +393,10 @@ fn rasen_attribute(ecx: &mut ExtCtxt, _: Span, meta_item: &MetaItem, item: Annot
                     } else {
                         Err(span)
                     }
-                },
-                _ => Err(first.span)
+                }
+                _ => Err(first.span),
             }
-        },
+        }
         _ => Err(meta_item.span),
     };
 
@@ -341,31 +408,34 @@ fn rasen_attribute(ecx: &mut ExtCtxt, _: Span, meta_item: &MetaItem, item: Annot
 
 fn idx_macro<'cx>(ecx: &'cx mut ExtCtxt, span: Span, tt: &[TokenTree]) -> Box<dyn MacResult + 'cx> {
     match (&tt[0], &tt[2]) {
-        (&TokenTree::Token(_, Token::Ident(obj, _)), &TokenTree::Token(_, Token::Ident(index, _))) => {
+        (
+            &TokenTree::Token(_, Token::Ident(obj, _)),
+            &TokenTree::Token(_, Token::Ident(index, _)),
+        ) => {
             let index = index.to_string();
             if index.is_empty() {
                 ecx.span_fatal(span, "Empty composite field");
             }
 
             let mut fields: Vec<_> = {
-                index.chars()
+                index
+                    .chars()
                     .map(|field| {
                         let index = match field {
                             'x' | 'r' | 's' => 0,
                             'y' | 'g' | 't' => 1,
                             'z' | 'b' | 'p' => 2,
                             'w' | 'a' | 'q' => 3,
-                            _ => ecx.span_fatal(span, &format!("invalid composite field {}", field)),
+                            _ => {
+                                ecx.span_fatal(span, &format!("invalid composite field {}", field))
+                            }
                         };
 
                         ecx.expr_call_ident(
                             span,
                             ast::Ident::from_str("index"),
                             vec![
-                                ecx.expr_addr_of(
-                                    span,
-                                    ecx.expr_ident(span, obj),
-                                ),
+                                ecx.expr_addr_of(span, ecx.expr_ident(span, obj)),
                                 ecx.expr_u32(span, index),
                             ],
                         )
@@ -374,33 +444,31 @@ fn idx_macro<'cx>(ecx: &'cx mut ExtCtxt, span: Span, tt: &[TokenTree]) -> Box<dy
             };
 
             let count = fields.len();
-            MacEager::expr(
-                if count > 1 {
-                    ecx.expr_call_ident(
-                        span,
-                        ast::Ident::from_str(&format!("vec{}", count)),
-                        fields,
-                    )
-                } else {
-                    fields.remove(0)
-                }
-            )
-        },
-        _ => {
-            box MacEager::default()
-        },
+            MacEager::expr(if count > 1 {
+                ecx.expr_call_ident(span, ast::Ident::from_str(&format!("vec{}", count)), fields)
+            } else {
+                fields.remove(0)
+            })
+        }
+        _ => box MacEager::default(),
     }
 }
 
 #[derive(Clone)]
-struct CompositeMacro<'a>{
+struct CompositeMacro<'a> {
     pub func: &'a str,
     pub float_ty: Option<ast::FloatTy>,
     pub int_ty: Option<ast::LitIntType>,
 }
 
 impl<'a> TTMacroExpander for CompositeMacro<'a> {
-    fn expand<'cx>(&self, ecx: &'cx mut ExtCtxt, span: Span, ts: TokenStream, _: Option<Span>) -> Box<dyn MacResult + 'cx> {
+    fn expand<'cx>(
+        &self,
+        ecx: &'cx mut ExtCtxt,
+        span: Span,
+        ts: TokenStream,
+        _: Option<Span>,
+    ) -> Box<dyn MacResult + 'cx> {
         let func = ast::Ident::from_str(self.func);
         let vec = ast::Ident::from_str("vec");
 
@@ -410,10 +478,10 @@ impl<'a> TTMacroExpander for CompositeMacro<'a> {
                 .map(|i| {
                     ecx.expr_method_call(
                         span,
-                        ecx.expr(span, ExprKind::Index(
-                            ecx.expr_ident(span, vec),
-                            ecx.expr_usize(span, i),
-                        )),
+                        ecx.expr(
+                            span,
+                            ExprKind::Index(ecx.expr_ident(span, vec), ecx.expr_usize(span, i)),
+                        ),
                         ast::Ident::from_str("clone"),
                         vec![],
                     )
@@ -421,69 +489,48 @@ impl<'a> TTMacroExpander for CompositeMacro<'a> {
                 .collect()
         };
 
-        let mut block = vec![
-            ecx.stmt_let(
-                span, true, vec,
-                ecx.expr_vec_ng(span),
-            ),
-        ];
+        let mut block = vec![ecx.stmt_let(span, true, vec, ecx.expr_vec_ng(span))];
 
-        block.extend(
-            ts.trees()
-                .filter_map(|tt| {
-                    let expr = match tt {
-                        TokenTree::Token(_, token) => match token {
-                            Token::Ident(id, _) => ecx.expr_ident(span, id),
-                            Token::Literal(lit, _) => match lit {
-                                Lit::Integer(name) => {
-                                    let val: u128 = format!("{}", name).parse().unwrap();
-                                    ecx.expr_lit(span, ast::LitKind::Int(
-                                        val, self.int_ty.unwrap(),
-                                    ))
-                                },
-                                Lit::Float(name) => ecx.expr_lit(span, ast::LitKind::Float(
-                                    name, self.float_ty.unwrap(),
-                                )),
-                                _ => return None,
-                            },
-                            _ => return None,
-                        },
+        block.extend(ts.trees().filter_map(|tt| {
+            let expr = match tt {
+                TokenTree::Token(_, token) => match token {
+                    Token::Ident(id, _) => ecx.expr_ident(span, id),
+                    Token::Literal(lit, _) => match lit {
+                        Lit::Integer(name) => {
+                            let val: u128 = format!("{}", name).parse().unwrap();
+                            ecx.expr_lit(span, ast::LitKind::Int(val, self.int_ty.unwrap()))
+                        }
+                        Lit::Float(name) => {
+                            ecx.expr_lit(span, ast::LitKind::Float(name, self.float_ty.unwrap()))
+                        }
                         _ => return None,
-                    };
+                    },
+                    _ => return None,
+                },
+                _ => return None,
+            };
 
-                    Some(ecx.stmt_expr(
-                        ecx.expr_method_call(
-                            span,
-                            ecx.expr_ident(span, vec),
-                            ast::Ident::from_str("extend"),
-                            vec![
-                                ecx.expr_call(
-                                    span,
-                                    ecx.expr_path(ecx.path(span, vec![
-                                        ast::Ident::from_str("ValueIter"),
-                                        ast::Ident::from_str("iter"),
-                                    ])),
-                                    vec![
-                                        ecx.expr_addr_of(span, expr),
-                                    ],
-                                ),
-                            ],
-                        ),
-                    ))
-                })
-        );
+            Some(ecx.stmt_expr(ecx.expr_method_call(
+                span,
+                ecx.expr_ident(span, vec),
+                ast::Ident::from_str("extend"),
+                vec![ecx.expr_call(
+                    span,
+                    ecx.expr_path(ecx.path(
+                        span,
+                        vec![
+                            ast::Ident::from_str("ValueIter"),
+                            ast::Ident::from_str("iter"),
+                        ],
+                    )),
+                    vec![ecx.expr_addr_of(span, expr)],
+                )],
+            )))
+        }));
 
-        block.push(
-            ecx.stmt_expr(
-                ecx.expr_call_ident(span, func, indices),
-            ),
-        );
+        block.push(ecx.stmt_expr(ecx.expr_call_ident(span, func, indices)));
 
-        MacEager::expr(
-            ecx.expr_block(
-                ecx.block(span, block),
-            ),
-        )
+        MacEager::expr(ecx.expr_block(ecx.block(span, block)))
     }
 }
 
@@ -586,6 +633,6 @@ pub fn plugin_registrar(reg: &mut Registry) {
 
     reg.register_syntax_extension(
         Symbol::intern("rasen"),
-        SyntaxExtension::MultiModifier(box rasen_attribute)
+        SyntaxExtension::MultiModifier(box rasen_attribute),
     );
 }

@@ -1,10 +1,8 @@
 //! Definitions for the Value type
 
-use std::{
-    ops::{Add, Sub, Mul, Div, Rem},
-};
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use crate::context::{Container, execute::Execute};
+use crate::context::{execute::Execute, Container};
 
 pub struct Value<C: Container<T> + ?Sized, T>(pub(crate) C::Value);
 
